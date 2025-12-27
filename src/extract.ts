@@ -11,10 +11,29 @@ export type RPState = {
 
 type PartialState = Partial<RPState>
 
-const moodWords = [
+type Candidate<T> = { value: T; score: number }
+
+const canonicalMoods = [
   'happy','sad','angry','excited','nervous','calm','anxious','tired','relaxed','romantic','scared','fearful','confident','playful','serious','flirty','melancholy','joyful','furious','hopeful',
   'okay','ok','fine','meh','bored','curious','lonely','guilty','ashamed','embarrassed','surprised','shocked','annoyed','frustrated','focused','determined','content','satisfied','worried','terrified','cheerful','miserable'
 ]
+
+const moodSynonyms: Record<string, string> = {
+  thrilled: 'excited', ecstatic: 'excited', pumped: 'excited', stoked: 'excited',
+  delighted: 'happy', glad: 'happy', cheerful: 'cheerful', joyful: 'joyful', elated: 'happy',
+  depressed: 'sad', down: 'sad', blue: 'sad', heartbroken: 'sad',
+  pissed: 'angry', mad: 'angry', irate: 'angry', livid: 'angry',
+  anxious: 'anxious', worried: 'worried', tense: 'nervous', jittery: 'nervous',
+  relaxed: 'relaxed', chill: 'relaxed', calm: 'calm',
+  tired: 'tired', exhausted: 'tired', sleepy: 'tired',
+  romantic: 'romantic', flirty: 'flirty', affectionate: 'romantic',
+  confident: 'confident', focused: 'focused', determined: 'determined',
+  embarrassed: 'embarrassed', ashamed: 'ashamed', guilty: 'guilty',
+  okay: 'okay', ok: 'ok', fine: 'fine', meh: 'meh',
+  terrified: 'terrified', scared: 'scared', afraid: 'scared', fearful: 'fearful',
+  bored: 'bored', curious: 'curious', lonely: 'lonely', frustrated: 'frustrated', annoyed: 'annoyed',
+  content: 'content', satisfied: 'satisfied', melancholy: 'melancholy', furious: 'furious', hopeful: 'hopeful', serious: 'serious', playful: 'playful'
+}
 
 const weatherWords = [
   'sunny','rain','rainy','raining','pouring','storm','stormy','cloudy','overcast','clear','clear skies','snow','snowy','blizzard','hail','fog','foggy','wind','windy','breeze','breezy','thunder','lightning','drizzle','shower','showers','downpour','humid','muggy','hot','cold','warm','chilly','freezing','freezing rain','sleet','hailstorm','heatwave','heat wave','icy'
@@ -35,6 +54,18 @@ function firstMatch(text: string, words: string[]): string | undefined {
     if (lower.includes(w)) return w
   }
   return undefined
+}
+
+function hasNegation(text: string, windowStart: number, windowEnd: number): boolean {
+  // Look for simple negations like "not", "no longer", "isn't", "ain't", "without" near the window
+  const span = text.slice(Math.max(0, windowStart - 12), Math.min(text.length, windowEnd + 12)).toLowerCase()
+  return /(not\s+|no\s+longer\s+|isn['’]?t\s+|ain['’]?t\s+|without\s+)/.test(span)
+}
+
+function chooseBest<T>(cands: Candidate<T>[], minScore = 0.6): T | undefined {
+  if (!cands.length) return undefined
+  const best = cands.reduce((a, b) => (b.score > a.score ? b : a))
+  return best.score >= minScore ? best.value : undefined
 }
 
 function escapeRegex(text: string): string {
@@ -61,19 +92,21 @@ const ambiguousVerbRegex = new RegExp(
   `\\b(?:${ambiguousVerbPattern})\\b(?:\\s+[\\w'-]+){0,3}\\s+(?:to|at|into|toward|towards|from|past)?\\s*((?:(?:${ambiguousDeterminerPattern})\\s+)?${ambiguousDescriptorPattern}${ambiguousNounPattern})\\b`
 )
 
-function extractAmbiguousPlace(text: string): string | undefined {
+function extractAmbiguousPlace(text: string): Candidate<string> | undefined {
   const lower = text.toLowerCase()
   const detMatch = lower.match(ambiguousDeterminerRegex)
-  if (detMatch && detMatch[1]) return detMatch[1]
+  if (detMatch && detMatch[1]) return { value: detMatch[1], score: 0.45 }
   const prepMatch = lower.match(ambiguousPrepositionRegex)
-  if (prepMatch && prepMatch[1]) return prepMatch[1]
+  if (prepMatch && prepMatch[1]) return { value: prepMatch[1], score: 0.5 }
   const verbMatch = lower.match(ambiguousVerbRegex)
-  if (verbMatch && verbMatch[1]) return verbMatch[1]
+  if (verbMatch && verbMatch[1]) return { value: verbMatch[1], score: 0.5 }
   return undefined
 }
 
 function extractPlace(text: string): string | undefined {
   const lower = text.toLowerCase()
+  const original = text
+  const cands: Candidate<string>[] = []
   // 1) Look for known place nouns, with optional determiners before
   for (const noun of placeNouns) {
     const idx = lower.indexOf(noun)
@@ -81,27 +114,35 @@ function extractPlace(text: string): string | undefined {
       // Expand to include a simple determiner like "the/my/our/his/her/their/a/an"
       const detMatch = lower.slice(Math.max(0, idx - 6), idx).match(/(the|my|our|his|her|their|a|an)\s+$/)
       if (detMatch) {
-        return `${detMatch[1]} ${noun}`
+        cands.push({ value: `${detMatch[1]} ${noun}`, score: 0.75 })
+      } else {
+        cands.push({ value: noun, score: 0.7 })
       }
-      return noun
     }
   }
-  // 2) Ambiguous nouns only with nearby context words
-  const ambig = extractAmbiguousPlace(text)
-  if (ambig) return ambig
-  // 3) Generic preposition-based capture (allows lowercase nouns)
+  // 2) Proper-noun phrase after preposition (e.g., at The Grand Library)
+  const proper = original.match(/\b(?:at|in|inside|outside|by|near|around|on)\s+((?:The\s+)?[A-Z][\w'\-]+(?:\s+(?:of|the|and|&|at))?\s*(?:[A-Z][\w'\-]+){0,5})/)
+  if (proper && proper[1]) {
+    cands.push({ value: proper[1].trim(), score: 0.9 })
+  }
+  // 3) Quoted place
+  const quoted = original.match(/\b(?:at|in|inside|outside|by|near|around|on)\s+"([^"\n]{3,60})"/i)
+  if (quoted && quoted[1]) {
+    cands.push({ value: quoted[1].trim(), score: 0.85 })
+  }
+  // 4) Generic preposition-based capture (allows lowercase nouns)
   const prep = /\b(?:at|in|on|inside|by|near|around|outside|behind|beside|under|over|between)\s+(?:the\s+|a\s+|an\s+|my\s+|our\s+|his\s+|her\s+|their\s+)?([^\n\.,;:!?]{3,60})/i
-  const m = text.match(prep)
+  const m = original.match(prep)
   if (m && m[1]) {
-    // Trim trailing filler words
     let phrase = m[1].trim()
     phrase = phrase.replace(/\s+(now|today|tonight|this\s+(morning|afternoon|evening|night))$/i, '').trim()
-    return phrase
+    cands.push({ value: phrase, score: 0.6 })
   }
-  // 4) Capitalized location-like phrase after "to" or "towards"
-  const m2 = text.match(/\b(?:to|towards)\s+([A-Z][A-Za-z'\-]{2,}(?:\s+[A-Z][A-Za-z'\-]{2,}){0,3})/)
-  if (m2 && m2[1]) return m2[1].trim()
-  return undefined
+  // 5) Ambiguous nouns only with nearby context words
+  const ambig = extractAmbiguousPlace(text)
+  if (ambig) cands.push(ambig)
+
+  return chooseBest(cands)
 }
 
 function defaultHourFromText(text: string): number | null {
@@ -130,7 +171,7 @@ function formatDate(d: Date, granularity: 'date' | 'datetime'): string {
   })
 }
 
-function extractDateTime(text: string, granularity: 'date' | 'datetime'): string | undefined {
+function extractDateTime(text: string, granularity: 'date' | 'datetime'): Candidate<string> | undefined {
   const now = new Date()
   const results = chrono.parse(text, now, { forwardDate: true })
   if (results && results.length > 0) {
@@ -144,7 +185,7 @@ function extractDateTime(text: string, granularity: 'date' | 'datetime'): string
         d.setHours(def, 0, 0, 0)
       }
     }
-    return formatDate(d, granularity)
+    return { value: formatDate(d, granularity), score: 0.9 }
   }
   // Fallback: time-only like "7ish" or "around 8"
   const m = text.match(/\b(?:around\s+|about\s+)?(\d{1,2})(?:\s*(?:am|pm))?\s*ish\b/i) || text.match(/\b(?:around\s+|about\s+)?(\d{1,2})\s*(am|pm)\b/i)
@@ -153,7 +194,7 @@ function extractDateTime(text: string, granularity: 'date' | 'datetime'): string
     const isPm = (m[2] || '').toLowerCase() === 'pm'
     const d = new Date(now)
     d.setHours((hour % 12) + (isPm ? 12 : 0), 0, 0, 0)
-    return formatDate(d, granularity)
+    return { value: formatDate(d, granularity), score: 0.75 }
   }
   // Fallback keywords like "tomorrow", "tonight" handled above by chrono; if missed, provide a coarse guess
   if (/\btomorrow\b/i.test(text)) {
@@ -161,12 +202,12 @@ function extractDateTime(text: string, granularity: 'date' | 'datetime'): string
     d.setDate(d.getDate() + 1)
     const def = defaultHourFromText(text)
     if (def !== null) d.setHours(def, 0, 0, 0)
-    return formatDate(d, granularity)
+    return { value: formatDate(d, granularity), score: 0.7 }
   }
   if (/\btonight\b/i.test(text)) {
     const d = new Date(now)
     d.setHours(22, 0, 0, 0)
-    return formatDate(d, granularity)
+    return { value: formatDate(d, granularity), score: 0.7 }
   }
   return undefined
 }
@@ -175,15 +216,52 @@ export function heuristicExtract(text: string, prev: RPState, granularity: 'date
   const patch: PartialState = {}
 
   const dt = extractDateTime(text, granularity)
-  if (dt) patch.inRoleplayDateTime = dt
+  if (dt) patch.inRoleplayDateTime = dt.value
 
-  const place = extractPlace(text)
-  if (place) patch.place = place
+  // Place extraction with scoring and negation check
+  const placeStr = extractPlace(text)
+  if (placeStr) patch.place = placeStr
 
-  const mood = firstMatch(text, moodWords)
+  // Mood extraction with patterns and scoring
+  const moodCands: Candidate<string>[] = []
+  const lower = text.toLowerCase()
+  // Pattern: "I feel X" / "feeling X" / "I'm X"
+  const feel = lower.match(/\b(i\s*(?:am|'m|m)\s+([a-z\-']+)|i\s*feel(?:ing)?\s+([a-z\-']+))\b/)
+  const moodWord = feel?.[2] || feel?.[3]
+  if (moodWord) {
+    const norm = moodSynonyms[moodWord] || moodWord
+    if (canonicalMoods.includes(norm)) moodCands.push({ value: norm, score: 0.85 })
+  }
+  // Fallback: any known mood word
+  for (const m of canonicalMoods) {
+    const idx = lower.indexOf(m)
+    if (idx >= 0 && !hasNegation(lower, idx, idx + m.length)) {
+      moodCands.push({ value: m, score: 0.65 })
+    }
+  }
+  const mood = chooseBest(moodCands)
   if (mood) patch.mood = mood
 
-  const weather = firstMatch(text, weatherWords)
+  // Weather extraction with patterns, negation, and scoring
+  const weatherCands: Candidate<string>[] = []
+  // Phrases like "it's raining", "the weather is cold"
+  const weatherPhrase = lower.match(/\b(?:it\s*(?:is|'s)|the\s+weather\s+is|skies\s+are|it\s+feels)\s+([a-z]+(?:\s+[a-z]+)?)\b/)
+  if (weatherPhrase && weatherPhrase[1]) {
+    const w = weatherPhrase[1]
+    for (const ww of weatherWords) {
+      if (w.includes(ww) && !hasNegation(lower, weatherPhrase.index || 0, (weatherPhrase.index || 0) + w.length)) {
+        weatherCands.push({ value: ww.includes(' ') ? ww : ww, score: 0.8 })
+        break
+      }
+    }
+  }
+  for (const ww of weatherWords) {
+    const idx = lower.indexOf(ww)
+    if (idx >= 0 && !hasNegation(lower, idx, idx + ww.length)) {
+      weatherCands.push({ value: ww, score: 0.6 })
+    }
+  }
+  const weather = chooseBest(weatherCands)
   if (weather) patch.weather = weather
 
   return patch
