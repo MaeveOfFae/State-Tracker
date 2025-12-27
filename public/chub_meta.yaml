@@ -46,3 +46,6 @@ config_schema:
         - date
         - datetime
       default: date
+
+github_path: 'https://github.com/MaeveOfFae/State-Tracker'
+
