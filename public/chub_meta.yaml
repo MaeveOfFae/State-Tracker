@@ -49,3 +49,6 @@ config_schema:
 
 github_path: 'https://github.com/MaeveOfFae/State-Tracker'
 
+
+extension_id: 'state-tracker-d41cf3c559f1'
+
