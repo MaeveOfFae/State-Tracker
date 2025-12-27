@@ -15,7 +15,7 @@ config_schema:
       default: false
     include_in_system_message:
       type: boolean
-      default: true
+      default: false
     prompt_block_label:
       type: string
       default: RP_STATE

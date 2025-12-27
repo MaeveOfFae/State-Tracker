@@ -50,8 +50,8 @@ function Harness() {
   }
 
   // Live config controls for testing
-  const [includeInPrompt, setIncludeInPrompt] = useState(true)
-  const [includeInSystem, setIncludeInSystem] = useState(true)
+  const [includeInPrompt, setIncludeInPrompt] = useState(false)
+  const [includeInSystem, setIncludeInSystem] = useState(false)
   const [autoBefore, setAutoBefore] = useState(true)
   const [autoAfter, setAutoAfter] = useState(true)
   const [onlyOnChange, setOnlyOnChange] = useState(true)
