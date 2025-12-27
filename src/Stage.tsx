@@ -127,11 +127,23 @@ export class Stage /* extends StageBase<...> */ {
 
   // ---- Before user prompt ----
   async beforePrompt(payload: any) {
-    let msgText: string =
-      payload?.userMessage?.text ??
-      payload?.message?.text ??
-      payload?.prompt?.userMessage ??
-      "";
+    const coalesce = (...vals: Array<unknown>): string => {
+      for (const v of vals) {
+        if (typeof v === 'string' && v.trim().length > 0) return v
+      }
+      return ''
+    }
+
+    // Accept multiple payload shapes from different runners
+    let msgText: string = coalesce(
+      payload?.userMessage?.text,
+      payload?.userMessage?.content,
+      payload?.message?.text,
+      payload?.message?.content,
+      payload?.prompt?.userMessage,
+      payload?.text,
+      payload?.content,
+    )
 
     // Optional auto-extraction
     let updatedState = { ...this.chatState.current }
@@ -171,12 +183,17 @@ export class Stage /* extends StageBase<...> */ {
       systemMessage = `${systemMessage}\n\nAuto-extracted changes (beforePrompt):\n${extractionSummary}`
     }
 
-    return {
-      // Conservative: set text where the template expects it.
-      // The exact field names depend on template/library, so keep both common shapes.
-      userMessage: payload?.userMessage ? { ...payload.userMessage, text: newUserText } : undefined,
-      message: payload?.message ? { ...payload.message, text: newUserText } : undefined,
+    const userMessage = payload?.userMessage
+      ? { ...payload.userMessage, text: newUserText, content: newUserText }
+      : undefined
+    const message = payload?.message
+      ? { ...payload.message, text: newUserText, content: newUserText }
+      : undefined
 
+    return {
+      // Set both text and content to maximize compatibility across runners
+      userMessage,
+      message,
       messageState,
       chatState: this.chatState,
       systemMessage,
@@ -185,7 +202,20 @@ export class Stage /* extends StageBase<...> */ {
 
   // ---- After model response ----
   async afterResponse(payload: any) {
-    const botText: string = payload?.botMessage?.text ?? payload?.message?.text ?? ''
+    const coalesce = (...vals: Array<unknown>): string => {
+      for (const v of vals) {
+        if (typeof v === 'string' && v.trim().length > 0) return v
+      }
+      return ''
+    }
+    const botText: string = coalesce(
+      payload?.botMessage?.text,
+      payload?.botMessage?.content,
+      payload?.message?.text,
+      payload?.message?.content,
+      payload?.text,
+      payload?.content,
+    )
 
     let extractionSummary: string | null = null
     if (this.config.auto_extract_after_response && botText) {
@@ -209,8 +239,8 @@ export class Stage /* extends StageBase<...> */ {
       systemMessage = `${systemMessage}\n\nAuto-extracted changes (afterResponse):\n${extractionSummary}`
     }
 
-    const botMessage = payload?.botMessage ? { ...payload.botMessage } : undefined;
-    const message = payload?.message ? { ...payload.message } : undefined;
+    const botMessage = payload?.botMessage ? { ...payload.botMessage, text: payload?.botMessage?.text ?? botText, content: payload?.botMessage?.content ?? botText } : undefined;
+    const message = payload?.message ? { ...payload.message, text: payload?.message?.text ?? botText, content: payload?.message?.content ?? botText } : undefined;
 
     return {
       chatState: this.chatState,

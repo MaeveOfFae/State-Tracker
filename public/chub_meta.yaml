@@ -24,7 +24,7 @@ config_schema:
       default: 280
     auto_extract_before_prompt:
       type: boolean
-      default: false
+      default: true
     auto_extract_after_response:
       type: boolean
       default: true
