@@ -12,5 +12,12 @@
     "strict": true,
     "jsx": "react-jsx"
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/App.tsx",
+    "src/TestRunner.tsx"
+  ],
+  "references": [
+    { "path": "./tsconfig.node.json" }
+  ]
 }
