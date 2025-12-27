@@ -37,17 +37,17 @@ Node & package manager
 - Uses Yarn classic. If needed, enable via Corepack: corepack enable
 
 Local dev options
-- Harness page (default):
+- Stages runner page (default, uses @chub-ai/stages-ts):
 	- yarn dev
-	- Opens the local preview that mounts src/main.tsx
-- Stages runner page (uses @chub-ai/stages-ts):
+	- Opens root (/) which renders src/App.tsx (TestRunner in dev)
+- Harness page:
 	- yarn dev:stages
-	- Opens index-stages.html which renders src/App.tsx (TestRunner in dev)
+	- Opens /index-harness.html which mounts src/main.tsx
 
 Typical workflow
 1. nvm use
 2. yarn install
-3. yarn dev or yarn dev:stages
+3. yarn dev (stages) or yarn dev:stages (harness)
 4. Edit src/Stage.tsx and public/chub_meta.yaml as needed
 
 ## Build

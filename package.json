@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "vite",
     "dev:host": "vite --host 0.0.0.0 --port 5173",
-    "dev:stages": "vite --open /index-stages.html",
-    "dev:stages:host": "vite --host 0.0.0.0 --port 5173 --open /index-stages.html",
+    "dev:stages": "vite --open /index-harness.html",
+    "dev:stages:host": "vite --host 0.0.0.0 --port 5173 --open /index-harness.html",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

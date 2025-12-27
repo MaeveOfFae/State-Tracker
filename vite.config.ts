@@ -19,8 +19,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html'),
-        stages: resolve(__dirname, 'index-stages.html'),
+        main: resolve(__dirname, 'index.html'), // stages runner (root)
+        harness: resolve(__dirname, 'index-harness.html'),
       },
     },
   },
