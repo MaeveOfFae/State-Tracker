@@ -52,7 +52,7 @@ function Harness() {
   // Live config controls for testing
   const [includeInPrompt, setIncludeInPrompt] = useState(true)
   const [includeInSystem, setIncludeInSystem] = useState(true)
-  const [autoBefore, setAutoBefore] = useState(false)
+  const [autoBefore, setAutoBefore] = useState(true)
   const [autoAfter, setAutoAfter] = useState(true)
   const [strategy, setStrategy] = useState<'heuristic' | 'llm'>('heuristic')
   const [endpoint, setEndpoint] = useState('')
@@ -73,6 +73,26 @@ function Harness() {
       time_granularity: granularity,
     })
   }, [includeInPrompt, includeInSystem, autoBefore, autoAfter, strategy, endpoint, label, maxNotes, granularity])
+
+  // Automatically run beforePrompt when userText changes if enabled
+  useEffect(() => {
+    if (!loaded) return
+    if (!autoBefore) return
+    ;(async () => {
+      const r = await stageRef.current!.beforePrompt({ userMessage: { text: userText, content: userText } })
+      setResult(r)
+    })()
+  }, [userText, autoBefore, loaded])
+
+  // Automatically run afterResponse when botText changes if enabled
+  useEffect(() => {
+    if (!loaded) return
+    if (!autoAfter) return
+    ;(async () => {
+      const r = await stageRef.current!.afterResponse({ botMessage: { text: botText, content: botText } })
+      setAfterResult(r)
+    })()
+  }, [botText, autoAfter, loaded])
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, padding: 12, fontFamily: 'sans-serif' }}>
