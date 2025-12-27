@@ -15,7 +15,8 @@
   "include": ["src"],
   "exclude": [
     "src/App.tsx",
-    "src/TestRunner.tsx"
+    "src/TestRunner.tsx",
+    "src/entry-stages.tsx"
   ],
   "references": [
     { "path": "./tsconfig.node.json" }

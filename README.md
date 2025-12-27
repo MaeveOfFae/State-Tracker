@@ -30,13 +30,31 @@ See public/chub_meta.yaml. Key options:
 
 ## Development
 
+Node version
+- Requires Node >= 24.2.0 (see .nvmrc). Use nvm:
+	- nvm use
+	- nvm install if not present
+
+Local dev options
+- Harness page (default):
+	- npm run dev
+	- Opens the local preview that mounts src/main.tsx
+- Stages runner page (uses @chub-ai/stages-ts):
+	- npm run dev:stages
+	- Opens index-stages.html which renders src/App.tsx (TestRunner in dev)
+
+Typical workflow
 1. npm install
-2. npm run dev
-3. Edit src/Stage.tsx and public/chub_meta.yaml as needed
+2. nvm use
+3. npm run dev or npm run dev:stages
+4. Edit src/Stage.tsx and public/chub_meta.yaml as needed
 
 ## Build
 
 - npm run build outputs the production site to dist/
+- Multi-page build outputs:
+	- dist/index.html (Harness)
+	- dist/index-stages.html (Stages runner)
 
 ## License
 
