@@ -1,77 +1,48 @@
-# All of these fields are optional, as is this file itself,
-#   in which case these values can be managed in the UI.
+name: RP State Tracker
+description: Track in-RP date/time/place/mood/weather and optionally inject it into the prompt.
+tags:
+  - roleplay
+  - state
+position: RIGHT
 
-# The name of the stage.
-# project_name: "Stage Template"
-
-# A short tagline to show in search.
-# tagline: "A base template for all stages."
-
-# 'PUBLIC', 'PRIVATE', or 'UNLISTED'.
-# visibility: 'PUBLIC'
-
-# 'ADJACENT' | 'NONE' | 'COVER' | 'FULLSCREEN'
-# 'ADJACENT' is default. The frame will display on the side of the
-#   chat on desktop and above/in the top half of the chat on mobile.
-# 'NONE' will not display, only run.
-# 'COVER' will, indeed, cover the chat history completely,
-#   but leave the text input box.
-# 'FULLSCREEN' will make nothing below the header bar
-#   show except for your stage.
-# position: 'ADJACENT'
-
-# Self-explanatory.
-# tags:
-#  - 'Stage'
-#  - 'Admin'
-#  - 'Template'
-#  - 'Base'
-
-# The schema of any user-supplied config.
-# If your stage requires a configuration but has no
-#   defined schema, it won't work.
 config_schema:
+  title: RP State Tracker
+  description: Settings for how RP state is shown and whether it is added to the prompt.
   type: object
   properties:
-    health:
+    include_in_prompt:
+      type: boolean
+      default: true
+    include_in_system_message:
+      type: boolean
+      default: true
+    prompt_block_label:
+      type: string
+      default: RP_STATE
+    max_note_chars:
       type: integer
-      default: 100
-
-# The schema of the state that you store.
-# This isn't needed even if you do store state,
-#   and is here more for future use cases to
-#   optimize storage.
-state_schema:
-  init:
-    type: object
-    properties:
-      grid:
-        type: string
-  message:
-    type: object
-    properties:
-      angry:
-        type: boolean
-        default: true
-  chat:
-    type: object
-    properties:
-      visited:
-        type: array
-        items:
-          type: integer
-
-# Whether to publish as 'Anonymous' instead of under your username.
-# is_anonymous: false
-
-# Self-explanatory.
-# ratings_disabled: false
-
-# This is here for future cases where ex. you need user secrets,
-#    but currently does nothing.
-# permissions:
-
-# extension_id is automatically generated on push with a new project;
-#    you should not make or set this value.
-# github_path will be added if it does not exist. It is the URL of the repo.
-
+      default: 280
+    auto_extract_before_prompt:
+      type: boolean
+      default: false
+    auto_extract_after_response:
+      type: boolean
+      default: true
+    extraction_strategy:
+      type: string
+      enum:
+        - heuristic
+        - llm
+      default: heuristic
+    extraction_llm_endpoint:
+      type: string
+      default: ""
+    extraction_max_runtime_ms:
+      type: integer
+      default: 1500
+    time_granularity:
+      type: string
+      enum:
+        - date
+        - datetime
+      default: date
