@@ -25,7 +25,7 @@ function Harness() {
   // Call load() once
   useEffect(() => {
     ;(async () => {
-      await stageRef.current!.load({})
+      await stageRef.current!.load()
       setLoaded(true)
     })()
   }, [])
@@ -54,6 +54,7 @@ function Harness() {
   const [includeInSystem, setIncludeInSystem] = useState(true)
   const [autoBefore, setAutoBefore] = useState(true)
   const [autoAfter, setAutoAfter] = useState(true)
+  const [onlyOnChange, setOnlyOnChange] = useState(true)
   const [strategy, setStrategy] = useState<'heuristic' | 'llm'>('heuristic')
   const [endpoint, setEndpoint] = useState('')
   const [label, setLabel] = useState('RP_STATE')
@@ -66,13 +67,14 @@ function Harness() {
       include_in_system_message: includeInSystem,
       auto_extract_before_prompt: autoBefore,
       auto_extract_after_response: autoAfter,
+      only_show_on_change: onlyOnChange,
       extraction_strategy: strategy,
       extraction_llm_endpoint: endpoint,
       prompt_block_label: label,
       max_note_chars: maxNotes,
       time_granularity: granularity,
     })
-  }, [includeInPrompt, includeInSystem, autoBefore, autoAfter, strategy, endpoint, label, maxNotes, granularity])
+  }, [includeInPrompt, includeInSystem, autoBefore, autoAfter, onlyOnChange, strategy, endpoint, label, maxNotes, granularity])
 
   // Automatically run beforePrompt when userText changes if enabled
   useEffect(() => {
@@ -111,6 +113,9 @@ function Harness() {
           </label>
           <label style={{ display: 'block' }}>
             <input type="checkbox" checked={autoAfter} onChange={(e) => setAutoAfter(e.target.checked)} /> auto_extract_after_response
+          </label>
+          <label style={{ display: 'block' }}>
+            <input type="checkbox" checked={onlyOnChange} onChange={(e) => setOnlyOnChange(e.target.checked)} /> only_show_on_change
           </label>
           <label style={{ display: 'block', marginTop: 6 }}>
             extraction_strategy

@@ -12,7 +12,7 @@ config_schema:
   properties:
     include_in_prompt:
       type: boolean
-      default: true
+      default: false
     include_in_system_message:
       type: boolean
       default: true
@@ -23,6 +23,9 @@ config_schema:
       type: integer
       default: 280
     auto_extract_before_prompt:
+      type: boolean
+      default: true
+    only_show_on_change:
       type: boolean
       default: true
     auto_extract_after_response:

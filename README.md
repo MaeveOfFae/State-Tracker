@@ -1,3 +1,6 @@
+- In-chat live coding
+	- yarn dev:chat:host
+	- In Chub Chat Settings → Staging URL, paste http://localhost:5173 and refresh.
 # RP State Tracker (Chub AI Stage)
 
 A Chub AI Stage that maintains a structured RP state (date/time, place, mood, weather, notes), lets the user edit it in a small UI, and can optionally inject a compact state block into the prompt.

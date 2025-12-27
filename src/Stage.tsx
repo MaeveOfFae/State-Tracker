@@ -3,6 +3,7 @@
 // We only implement documented lifecycle functions: constructor, load, beforePrompt, afterResponse, setState, render.
 
 import React from "react";
+import { StageBase } from "@chub-ai/stages-ts";
 import { heuristicExtract, llmExtract, diffState, summarizeDiffs } from './extract'
 
 type RPState = {
@@ -49,23 +50,45 @@ function buildStateBlock(label: string, s: RPState) {
   );
 }
 
-export class Stage /* extends StageBase<...> */ {
+function buildSystemBox(label: string, s: RPState, diffs?: Record<string, { from: string; to: string }>) {
+  const lines: string[] = []
+  lines.push(`[${label}]`)
+  lines.push(`DateTime: ${s.inRoleplayDateTime || "(unset)"}`)
+  lines.push(`Place: ${s.place || "(unset)"}`)
+  lines.push(`Mood: ${s.mood || "(unset)"}`)
+  lines.push(`Weather: ${s.weather || "(unset)"}`)
+  lines.push(`Notes: ${s.sceneNotes || "(unset)"}`)
+  if (diffs && Object.keys(diffs).length > 0) {
+    lines.push("")
+    lines.push("Changes:")
+    for (const [k, v] of Object.entries(diffs)) {
+      lines.push(`- ${k}: "${v.from}" → "${v.to}"`)
+    }
+  }
+  lines.push(`[/${label}]`)
+  return lines.join('\n')
+}
+
+type Config = {
+  include_in_prompt: boolean;
+  include_in_system_message: boolean;
+  prompt_block_label: string;
+  max_note_chars: number;
+  auto_extract_before_prompt: boolean;
+  auto_extract_after_response: boolean;
+  extraction_strategy: 'heuristic' | 'llm';
+  extraction_llm_endpoint: string;
+  extraction_max_runtime_ms: number;
+  time_granularity: 'date' | 'datetime';
+  only_show_on_change?: boolean;
+}
+
+export class Stage extends StageBase<any, ChatState, MessageState, Config> {
   private chatState: ChatState = { current: { ...DEFAULT_RP_STATE } };
   private _onChange?: () => void;
 
-  private config: {
-    include_in_prompt: boolean;
-    include_in_system_message: boolean;
-    prompt_block_label: string;
-    max_note_chars: number;
-    auto_extract_before_prompt: boolean;
-    auto_extract_after_response: boolean;
-    extraction_strategy: 'heuristic' | 'llm';
-    extraction_llm_endpoint: string;
-    extraction_max_runtime_ms: number;
-    time_granularity: 'date' | 'datetime';
-  } = {
-    include_in_prompt: true,
+  private config: Config = {
+    include_in_prompt: false,
     include_in_system_message: true,
     prompt_block_label: "RP_STATE",
     max_note_chars: 280,
@@ -79,6 +102,7 @@ export class Stage /* extends StageBase<...> */ {
 
   // ---- Initialization ----
   constructor(init: any) {
+    super(init);
     // init/config payload shapes are not specified in docs; treat as optional.
     const cfg = init?.config ?? init?.configuration ?? null;
     if (cfg && typeof cfg === "object") {
@@ -94,24 +118,19 @@ export class Stage /* extends StageBase<...> */ {
         extraction_llm_endpoint: cfg.extraction_llm_endpoint ?? this.config.extraction_llm_endpoint,
         extraction_max_runtime_ms: cfg.extraction_max_runtime_ms ?? this.config.extraction_max_runtime_ms,
         time_granularity: cfg.time_granularity ?? this.config.time_granularity,
+        only_show_on_change: cfg.only_show_on_change ?? this.config.only_show_on_change ?? true,
       };
     }
   }
 
-  async load(payload: any) {
-    // Restore saved chat state if present
-    const savedChatState = payload?.chatState ?? null;
-    if (savedChatState?.current) {
-      this.chatState.current = {
-        ...DEFAULT_RP_STATE,
-        ...savedChatState.current,
-      };
-    }
-
-    // Return nothing else unless you choose to use initState explicitly.
-    // Docs: initState is returned at end of load when needed.
+  async load() {
+    // Return initial state; StageBase will persist state as needed.
     return {
+      initState: null,
       chatState: this.chatState,
+      messageState: null,
+      error: null,
+      success: true,
     };
   }
 
@@ -145,17 +164,21 @@ export class Stage /* extends StageBase<...> */ {
       payload?.content,
     )
 
-    // Optional auto-extraction
+    // Optional auto-extraction (fail-safe)
     let updatedState = { ...this.chatState.current }
     let extractionSummary: string | null = null
     if (this.config.auto_extract_before_prompt && msgText) {
-      const prev = { ...updatedState }
-      const patch = await this.extractFromText(msgText, prev)
-      updatedState = { ...updatedState, ...patch }
-      const diffs = diffState(this.chatState.current, updatedState)
-      if (Object.keys(diffs).length > 0) {
-        this.chatState.current = updatedState
-        extractionSummary = summarizeDiffs(diffs)
+      try {
+        const prev = { ...updatedState }
+        const patch = await this.extractFromText(msgText, prev)
+        updatedState = { ...updatedState, ...patch }
+        const diffs = diffState(this.chatState.current, updatedState)
+        if (Object.keys(diffs).length > 0) {
+          this.chatState.current = updatedState
+          extractionSummary = summarizeDiffs(diffs)
+        }
+      } catch {
+        // Fail gracefully: no-op
       }
     }
 
@@ -170,34 +193,40 @@ export class Stage /* extends StageBase<...> */ {
     // 1) Message state snapshot (for swipe/jump) — message state belongs to the node.
     const messageState: MessageState = { snapshot: current };
 
-    // 2) Optionally append to prompt so the LLM sees it (system messages are NOT sent to the LLM).
-    const newUserText = this.config.include_in_prompt
-      ? `${msgText}\n\n${stateBlock}`
-      : msgText;
+    // 2) Never modify visible message to avoid interrupting RP. Use stageDirections for LLM-only context.
+    const stageDirections = this.config.include_in_prompt ? `\n\n${stateBlock}` : null
 
     // 3) Optionally attach a system message for the human (visible, not sent to LLM).
-    let systemMessage = this.config.include_in_system_message
-      ? `RP State Snapshot:\n${stateBlock}`
-      : null;
-    if (extractionSummary && this.config.include_in_system_message) {
-      systemMessage = `${systemMessage}\n\nAuto-extracted changes (beforePrompt):\n${extractionSummary}`
+    let systemMessage: string | null = null
+    if (this.config.include_in_system_message) {
+      const onlyOnChange = this.config.only_show_on_change ?? true
+      // Only show when there are changes, to avoid interrupting RP.
+      if (!onlyOnChange || extractionSummary) {
+        const diffs = diffState(this.chatState.current, current) // current reflects clamped notes only
+        systemMessage = buildSystemBox(this.config.prompt_block_label, current, diffs)
+      }
     }
 
     const userMessage = payload?.userMessage
-      ? { ...payload.userMessage, text: newUserText, content: newUserText }
+      ? { ...payload.userMessage, text: msgText, content: msgText }
       : undefined
     const message = payload?.message
-      ? { ...payload.message, text: newUserText, content: newUserText }
+      ? { ...payload.message, text: msgText, content: msgText }
       : undefined
 
     return {
-      // Set both text and content to maximize compatibility across runners
+      // StageBase-compatible fields (do not change visible content)
+      modifiedMessage: null,
+      stageDirections,
+      systemMessage,
+      error: null,
+      chatState: this.chatState,
+      messageState,
+
+      // Compatibility fields for local harness
       userMessage,
       message,
-      messageState,
-      chatState: this.chatState,
-      systemMessage,
-    };
+    } as any;
   }
 
   // ---- After model response ----
@@ -219,35 +248,47 @@ export class Stage /* extends StageBase<...> */ {
 
     let extractionSummary: string | null = null
     if (this.config.auto_extract_after_response && botText) {
-      const prev = { ...this.chatState.current }
-      const patch = await this.extractFromText(botText, prev)
-      const next = { ...prev, ...patch }
-      const diffs = diffState(prev, next)
-      if (Object.keys(diffs).length > 0) {
-        this.chatState.current = next
-        extractionSummary = summarizeDiffs(diffs)
+      try {
+        const prev = { ...this.chatState.current }
+        const patch = await this.extractFromText(botText, prev)
+        const next = { ...prev, ...patch }
+        const diffs = diffState(prev, next)
+        if (Object.keys(diffs).length > 0) {
+          this.chatState.current = next
+          extractionSummary = summarizeDiffs(diffs)
+        }
+      } catch {
+        // Fail gracefully
       }
     }
 
     const current: RPState = { ...this.chatState.current };
     const stateBlock = buildStateBlock(this.config.prompt_block_label, current);
 
-    let systemMessage = this.config.include_in_system_message
-      ? `RP State Snapshot:\n${stateBlock}`
-      : null;
-    if (extractionSummary && this.config.include_in_system_message) {
-      systemMessage = `${systemMessage}\n\nAuto-extracted changes (afterResponse):\n${extractionSummary}`
+    let systemMessage: string | null = null
+    if (this.config.include_in_system_message) {
+      const onlyOnChange = this.config.only_show_on_change ?? true
+      if (!onlyOnChange || extractionSummary) {
+        const diffs = diffState(this.chatState.current, current)
+        systemMessage = buildSystemBox(this.config.prompt_block_label, current, diffs)
+      }
     }
 
     const botMessage = payload?.botMessage ? { ...payload.botMessage, text: payload?.botMessage?.text ?? botText, content: payload?.botMessage?.content ?? botText } : undefined;
     const message = payload?.message ? { ...payload.message, text: payload?.message?.text ?? botText, content: payload?.message?.content ?? botText } : undefined;
 
     return {
-      chatState: this.chatState,
+      modifiedMessage: null,
+      stageDirections: null,
       systemMessage,
+      error: null,
+      chatState: this.chatState,
+      messageState: null,
+
+      // Compatibility for local harness display
       botMessage,
       message,
-    };
+    } as any;
   }
 
   private async extractFromText(text: string, prev: RPState) {
@@ -260,14 +301,13 @@ export class Stage /* extends StageBase<...> */ {
 
   // ---- On swipe/jump ----
   async setState(payload: any) {
-    // Restore UI to the snapshot for that message node (if present).
-    const msgState: MessageState | null = payload?.messageState ?? null;
+    // Accept either direct MessageState or wrapper { messageState }
+    const msgState: MessageState | null = (payload && payload.snapshot)
+      ? payload as MessageState
+      : (payload?.messageState ?? null);
     if (msgState?.snapshot) {
       this.chatState.current = { ...DEFAULT_RP_STATE, ...msgState.snapshot };
     }
-    return {
-      chatState: this.chatState,
-    };
   }
 
   // ---- UI ----
