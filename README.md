@@ -30,31 +30,41 @@ See public/chub_meta.yaml. Key options:
 
 ## Development
 
-Node version
-- Requires Node >= 24.2.0 (see .nvmrc). Use nvm:
+Node & package manager
+- Requires Node 21.7.1 (see .nvmrc). Use nvm:
 	- nvm use
 	- nvm install if not present
+- Uses Yarn classic. If needed, enable via Corepack: corepack enable
 
 Local dev options
 - Harness page (default):
-	- npm run dev
+	- yarn dev
 	- Opens the local preview that mounts src/main.tsx
 - Stages runner page (uses @chub-ai/stages-ts):
-	- npm run dev:stages
+	- yarn dev:stages
 	- Opens index-stages.html which renders src/App.tsx (TestRunner in dev)
 
 Typical workflow
-1. npm install
-2. nvm use
-3. npm run dev or npm run dev:stages
+1. nvm use
+2. yarn install
+3. yarn dev or yarn dev:stages
 4. Edit src/Stage.tsx and public/chub_meta.yaml as needed
 
 ## Build
 
-- npm run build outputs the production site to dist/
+- yarn build outputs the production site to dist/
 - Multi-page build outputs:
 	- dist/index.html (Harness)
 	- dist/index-stages.html (Stages runner)
+
+## CI deployment to Chub
+
+This project can publish the stage to Chub via GitHub Actions on pushes to main. Set a repository secret named CHUB_AUTH_TOKEN containing your stage auth token (get it from the API). In GitHub: Settings → Secrets and Variables → Actions → New repository secret.
+
+## Developing the stage
+
+- Implement logic in src/Stage.tsx.
+- When running locally (development mode), src/TestRunner.tsx is used to simulate chat interactions; modify it to cover your scenarios.
 
 ## License
 

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "yarn@1.22.22",
   "scripts": {
     "dev": "vite",
     "dev:host": "vite --host 0.0.0.0 --port 5173",
@@ -26,6 +27,6 @@
     "vite": "^5.1.0"
   },
   "engines": {
-    "node": ">=24.2.0"
+    "node": "21.7.1"
   }
 }
