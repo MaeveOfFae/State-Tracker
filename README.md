@@ -28,7 +28,7 @@ See public/chub_meta.yaml. Key options:
 - prompt_block_label: Label used in the injected block
 - max_note_chars: Clamp notes to avoid token bloat
 
-## Development 
+## Development
 
 Node version
 - Requires Node >= 24.2.0 (see .nvmrc). Use nvm:
