@@ -1,45 +1,23 @@
 {
-  "name": "@chub-ai/stage-template",
-  "private": false,
-  "version": "0.0.0",
+  "name": "rp-state-tracker-stage",
+  "version": "0.1.0",
+  "private": true,
   "type": "module",
-  "files": [
-    "dist"
-  ],
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "license": "UNLICENSED",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@chub-ai/stages-ts": "^0.3.7",
-    "@typescript-eslint/parser": "^7.4.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "vite-plugin-dts": "^3.9.1"
-  },
-  "engines": {
-    "node": "21.7.1"
+    "chrono-node": "^2.7.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@types/react": "^18.2.66",
-    "@types/react-dom": "^18.2.22",
-    "@vitejs/plugin-react": "^4.2.1",
-    "eslint": "^8.57.0",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.6",
-    "sass": "^1.72.0",
-    "typescript": "^5.2.2",
-    "vite": "^5.2.0"
-  },
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.umd.cjs"
-    }
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.2",
+    "@vitejs/plugin-react": "^4.3.3",
+    "typescript": "^5.6.3",
+    "vite": "^5.1.0"
   }
 }
