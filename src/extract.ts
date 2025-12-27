@@ -107,6 +107,31 @@ function extractPlace(text: string): string | undefined {
   const lower = text.toLowerCase()
   const original = text
   const cands: Candidate<string>[] = []
+  // Helper to penalize generic phrases
+  const isTooGeneric = (phrase: string) => {
+    const p = phrase.trim().toLowerCase()
+    if (!p) return true
+    // If the phrase is just an ambiguous noun (with optional determiner), reject
+    const genericRe = new RegExp(`^(?:the |a |an |my |our |his |her |their )?(?:${ambiguousNounPattern})(?:s)?$`)
+    if (genericRe.test(p)) return true
+    // Common over-generic phrases
+    if ([
+      'the city','the town','downtown','uptown','outside','inside','the building','the room','the area','the place','a place','somewhere','here','there'
+    ].includes(p)) return true
+    // Very short single words that are not proper nouns
+    if (!/[A-Z]/.test(phrase) && p.split(/\s+/).length === 1 && p.length <= 5) return true
+    return false
+  }
+  const boostIfSpecific = (phrase: string, base: number) => {
+    let score = base
+    // Boost for capitalized proper nouns
+    if (/(?:^|\s)([A-Z][\w'\-]+)/.test(phrase)) score += 0.1
+    // Boost for descriptive adjectives
+    if (/(grand|central|upper|lower|east|west|north|south|royal|main|city|old|new|public|private)\b/i.test(phrase)) score += 0.05
+    // Penalize if too generic
+    if (isTooGeneric(phrase)) score -= 0.3
+    return Math.max(0, Math.min(1, score))
+  }
   // 1) Look for known place nouns, with optional determiners before
   for (const noun of placeNouns) {
     const idx = lower.indexOf(noun)
@@ -114,21 +139,24 @@ function extractPlace(text: string): string | undefined {
       // Expand to include a simple determiner like "the/my/our/his/her/their/a/an"
       const detMatch = lower.slice(Math.max(0, idx - 6), idx).match(/(the|my|our|his|her|their|a|an)\s+$/)
       if (detMatch) {
-        cands.push({ value: `${detMatch[1]} ${noun}`, score: 0.75 })
+        const phrase = `${detMatch[1]} ${noun}`
+        cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.75) })
       } else {
-        cands.push({ value: noun, score: 0.7 })
+        cands.push({ value: noun, score: boostIfSpecific(noun, 0.7) })
       }
     }
   }
   // 2) Proper-noun phrase after preposition (e.g., at The Grand Library)
   const proper = original.match(/\b(?:at|in|inside|outside|by|near|around|on)\s+((?:The\s+)?[A-Z][\w'\-]+(?:\s+(?:of|the|and|&|at))?\s*(?:[A-Z][\w'\-]+){0,5})/)
   if (proper && proper[1]) {
-    cands.push({ value: proper[1].trim(), score: 0.9 })
+    const phrase = proper[1].trim()
+    cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.9) })
   }
   // 3) Quoted place
   const quoted = original.match(/\b(?:at|in|inside|outside|by|near|around|on)\s+"([^"\n]{3,60})"/i)
   if (quoted && quoted[1]) {
-    cands.push({ value: quoted[1].trim(), score: 0.85 })
+    const phrase = quoted[1].trim()
+    cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.85) })
   }
   // 4) Generic preposition-based capture (allows lowercase nouns)
   const prep = /\b(?:at|in|on|inside|by|near|around|outside|behind|beside|under|over|between)\s+(?:the\s+|a\s+|an\s+|my\s+|our\s+|his\s+|her\s+|their\s+)?([^\n\.,;:!?]{3,60})/i
@@ -136,13 +164,16 @@ function extractPlace(text: string): string | undefined {
   if (m && m[1]) {
     let phrase = m[1].trim()
     phrase = phrase.replace(/\s+(now|today|tonight|this\s+(morning|afternoon|evening|night))$/i, '').trim()
-    cands.push({ value: phrase, score: 0.6 })
+    cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.6) })
   }
   // 5) Ambiguous nouns only with nearby context words
   const ambig = extractAmbiguousPlace(text)
   if (ambig) cands.push(ambig)
 
-  return chooseBest(cands)
+  const best = chooseBest(cands)
+  // Reject too generic best results
+  if (best && isTooGeneric(best)) return undefined
+  return best
 }
 
 function defaultHourFromText(text: string): number | null {
@@ -255,9 +286,17 @@ export function heuristicExtract(text: string, prev: RPState, granularity: 'date
       }
     }
   }
+  // Fallback scanning only if environment anchors nearby
+  const envAnchors = ['outside','weather','sky','skies','air','temperature','forecast','storm','rain','snow','wind','sun','heat','cold']
+  const hasAnchorAround = (i: number) => {
+    const start = Math.max(0, i - 16)
+    const end = Math.min(lower.length, i + 16)
+    const span = lower.slice(start, end)
+    return envAnchors.some(a => span.includes(a))
+  }
   for (const ww of weatherWords) {
     const idx = lower.indexOf(ww)
-    if (idx >= 0 && !hasNegation(lower, idx, idx + ww.length)) {
+    if (idx >= 0 && !hasNegation(lower, idx, idx + ww.length) && hasAnchorAround(idx)) {
       weatherCands.push({ value: ww, score: 0.6 })
     }
   }
