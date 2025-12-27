@@ -1,205 +1,309 @@
-import {ReactElement} from "react";
-import {StageBase, StageResponse, InitialData, Message} from "@chub-ai/stages-ts";
-import {LoadResponse} from "@chub-ai/stages-ts/dist/types/load";
+// Stage.tsx
+// NOTE: This file assumes the stage-template already wires up the StageBase interface.
+// We only implement documented lifecycle functions: constructor, load, beforePrompt, afterResponse, setState, render.
 
-/***
- The type that this stage persists message-level state in.
- This is primarily for readability, and not enforced.
+import React from "react";
+import { heuristicExtract, llmExtract, diffState, summarizeDiffs } from './extract'
 
- @description This type is saved in the database after each message,
-  which makes it ideal for storing things like positions and statuses,
-  but not for things like history, which is best managed ephemerally
-  in the internal state of the Stage class itself.
- ***/
-type MessageStateType = any;
+type RPState = {
+  inRoleplayDateTime: string; // free-form
+  place: string;
+  mood: string;
+  weather: string;
+  sceneNotes: string;
+};
 
-/***
- The type of the stage-specific configuration of this stage.
+// What we store per-message so swipe/jump restores historical context
+type MessageState = {
+  snapshot: RPState;
+};
 
- @description This is for things you want people to be able to configure,
-  like background color.
- ***/
-type ConfigType = any;
+// What we store across the chat graph (current working values)
+type ChatState = {
+  current: RPState;
+};
 
-/***
- The type that this stage persists chat initialization state in.
- If there is any 'constant once initialized' static state unique to a chat,
- like procedurally generated terrain that is only created ONCE and ONLY ONCE per chat,
- it belongs here.
- ***/
-type InitStateType = any;
+const DEFAULT_RP_STATE: RPState = {
+  inRoleplayDateTime: "",
+  place: "",
+  mood: "",
+  weather: "",
+  sceneNotes: "",
+};
 
-/***
- The type that this stage persists dynamic chat-level state in.
- This is for any state information unique to a chat,
-    that applies to ALL branches and paths such as clearing fog-of-war.
- It is usually unlikely you will need this, and if it is used for message-level
-    data like player health then it will enter an inconsistent state whenever
-    they change branches or jump nodes. Use MessageStateType for that.
- ***/
-type ChatStateType = any;
+function clamp(s: string, max: number) {
+  if (!s) return "";
+  return s.length <= max ? s : s.slice(0, max);
+}
 
-/***
- A simple example class that implements the interfaces necessary for a Stage.
- If you want to rename it, be sure to modify App.js as well.
- @link https://github.com/CharHubAI/chub-stages-ts/blob/main/src/types/stage.ts
- ***/
-export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateType, ConfigType> {
+function buildStateBlock(label: string, s: RPState) {
+  // Keep it compact, stable, and parse-friendly.
+  return (
+    `[${label}]\n` +
+    `DateTime: ${s.inRoleplayDateTime || "(unset)"}\n` +
+    `Place: ${s.place || "(unset)"}\n` +
+    `Mood: ${s.mood || "(unset)"}\n` +
+    `Weather: ${s.weather || "(unset)"}\n` +
+    `Notes: ${s.sceneNotes || "(unset)"}\n` +
+    `[/${label}]`
+  );
+}
 
-    /***
-     A very simple example internal state. Can be anything.
-     This is ephemeral in the sense that it isn't persisted to a database,
-     but exists as long as the instance does, i.e., the chat page is open.
-     ***/
-    myInternalState: {[key: string]: any};
+export class Stage /* extends StageBase<...> */ {
+  private chatState: ChatState = { current: { ...DEFAULT_RP_STATE } };
+  private _onChange?: () => void;
 
-    constructor(data: InitialData<InitStateType, ChatStateType, MessageStateType, ConfigType>) {
-        /***
-         This is the first thing called in the stage,
-         to create an instance of it.
-         The definition of InitialData is at @link https://github.com/CharHubAI/chub-stages-ts/blob/main/src/types/initial.ts
-         Character at @link https://github.com/CharHubAI/chub-stages-ts/blob/main/src/types/character.ts
-         User at @link https://github.com/CharHubAI/chub-stages-ts/blob/main/src/types/user.ts
-         ***/
-        super(data);
-        const {
-            characters,         // @type:  { [key: string]: Character }
-            users,                  // @type:  { [key: string]: User}
-            config,                                 //  @type:  ConfigType
-            messageState,                           //  @type:  MessageStateType
-            environment,                     // @type: Environment (which is a string)
-            initState,                             // @type: null | InitStateType
-            chatState                              // @type: null | ChatStateType
-        } = data;
-        this.myInternalState = messageState != null ? messageState : {'someKey': 'someValue'};
-        this.myInternalState['numUsers'] = Object.keys(users).length;
-        this.myInternalState['numChars'] = Object.keys(characters).length;
+  private config: {
+    include_in_prompt: boolean;
+    include_in_system_message: boolean;
+    prompt_block_label: string;
+    max_note_chars: number;
+    auto_extract_before_prompt: boolean;
+    auto_extract_after_response: boolean;
+    extraction_strategy: 'heuristic' | 'llm';
+    extraction_llm_endpoint: string;
+    extraction_max_runtime_ms: number;
+    time_granularity: 'date' | 'datetime';
+  } = {
+    include_in_prompt: true,
+    include_in_system_message: true,
+    prompt_block_label: "RP_STATE",
+    max_note_chars: 280,
+    auto_extract_before_prompt: false,
+    auto_extract_after_response: true,
+    extraction_strategy: 'heuristic',
+    extraction_llm_endpoint: '',
+    extraction_max_runtime_ms: 1500,
+    time_granularity: 'date',
+  };
+
+  // ---- Initialization ----
+  constructor(init: any) {
+    // init/config payload shapes are not specified in docs; treat as optional.
+    const cfg = init?.config ?? init?.configuration ?? null;
+    if (cfg && typeof cfg === "object") {
+      this.config = {
+        include_in_prompt: cfg.include_in_prompt ?? this.config.include_in_prompt,
+        include_in_system_message:
+          cfg.include_in_system_message ?? this.config.include_in_system_message,
+        prompt_block_label: cfg.prompt_block_label ?? this.config.prompt_block_label,
+        max_note_chars: cfg.max_note_chars ?? this.config.max_note_chars,
+        auto_extract_before_prompt: cfg.auto_extract_before_prompt ?? this.config.auto_extract_before_prompt,
+        auto_extract_after_response: cfg.auto_extract_after_response ?? this.config.auto_extract_after_response,
+        extraction_strategy: cfg.extraction_strategy ?? this.config.extraction_strategy,
+        extraction_llm_endpoint: cfg.extraction_llm_endpoint ?? this.config.extraction_llm_endpoint,
+        extraction_max_runtime_ms: cfg.extraction_max_runtime_ms ?? this.config.extraction_max_runtime_ms,
+        time_granularity: cfg.time_granularity ?? this.config.time_granularity,
+      };
+    }
+  }
+
+  async load(payload: any) {
+    // Restore saved chat state if present
+    const savedChatState = payload?.chatState ?? null;
+    if (savedChatState?.current) {
+      this.chatState.current = {
+        ...DEFAULT_RP_STATE,
+        ...savedChatState.current,
+      };
     }
 
-    async load(): Promise<Partial<LoadResponse<InitStateType, ChatStateType, MessageStateType>>> {
-        /***
-         This is called immediately after the constructor, in case there is some asynchronous code you need to
-         run on instantiation.
-         ***/
-        return {
-            /*** @type boolean @default null
-             @description The 'success' boolean returned should be false IFF (if and only if), some condition is met that means
-              the stage shouldn't be run at all and the iFrame can be closed/removed.
-              For example, if a stage displays expressions and no characters have an expression pack,
-              there is no reason to run the stage, so it would return false here. ***/
-            success: true,
-            /*** @type null | string @description an error message to show
-             briefly at the top of the screen, if any. ***/
-            error: null,
-            initState: null,
-            chatState: null,
-        };
+    // Return nothing else unless you choose to use initState explicitly.
+    // Docs: initState is returned at end of load when needed.
+    return {
+      chatState: this.chatState,
+    };
+  }
+
+  // Optional: allow host/harness to receive re-render notifications when internal UI updates
+  attach(onChange: () => void) {
+    this._onChange = onChange;
+  }
+
+  updateConfig(patch: Partial<typeof this.config>) {
+    this.config = { ...this.config, ...patch }
+    this._onChange?.()
+  }
+
+  // ---- Before user prompt ----
+  async beforePrompt(payload: any) {
+    let msgText: string =
+      payload?.userMessage?.text ??
+      payload?.message?.text ??
+      payload?.prompt?.userMessage ??
+      "";
+
+    // Optional auto-extraction
+    let updatedState = { ...this.chatState.current }
+    let extractionSummary: string | null = null
+    if (this.config.auto_extract_before_prompt && msgText) {
+      const prev = { ...updatedState }
+      const patch = await this.extractFromText(msgText, prev)
+      updatedState = { ...updatedState, ...patch }
+      const diffs = diffState(this.chatState.current, updatedState)
+      if (Object.keys(diffs).length > 0) {
+        this.chatState.current = updatedState
+        extractionSummary = summarizeDiffs(diffs)
+      }
     }
 
-    async setState(state: MessageStateType): Promise<void> {
-        /***
-         This can be called at any time, typically after a jump to a different place in the chat tree
-         or a swipe. Note how neither InitState nor ChatState are given here. They are not for
-         state that is affected by swiping.
-         ***/
-        if (state != null) {
-            this.myInternalState = {...this.myInternalState, ...state};
-        }
+    // Clamp notes to avoid runaway tokens
+    const current: RPState = {
+      ...this.chatState.current,
+      sceneNotes: clamp(this.chatState.current.sceneNotes, this.config.max_note_chars),
+    };
+
+    const stateBlock = buildStateBlock(this.config.prompt_block_label, current);
+
+    // 1) Message state snapshot (for swipe/jump) — message state belongs to the node.
+    const messageState: MessageState = { snapshot: current };
+
+    // 2) Optionally append to prompt so the LLM sees it (system messages are NOT sent to the LLM).
+    const newUserText = this.config.include_in_prompt
+      ? `${msgText}\n\n${stateBlock}`
+      : msgText;
+
+    // 3) Optionally attach a system message for the human (visible, not sent to LLM).
+    let systemMessage = this.config.include_in_system_message
+      ? `RP State Snapshot:\n${stateBlock}`
+      : null;
+    if (extractionSummary && this.config.include_in_system_message) {
+      systemMessage = `${systemMessage}\n\nAuto-extracted changes (beforePrompt):\n${extractionSummary}`
     }
 
-    async beforePrompt(userMessage: Message): Promise<Partial<StageResponse<ChatStateType, MessageStateType>>> {
-        /***
-         This is called after someone presses 'send', but before anything is sent to the LLM.
-         ***/
-        const {
-            content,            /*** @type: string
-             @description Just the last message about to be sent. ***/
-            anonymizedId,       /*** @type: string
-             @description An anonymized ID that is unique to this individual
-              in this chat, but NOT their Chub ID. ***/
-            isBot             /*** @type: boolean
-             @description Whether this is itself from another bot, ex. in a group chat. ***/
-        } = userMessage;
-        return {
-            /*** @type null | string @description A string to add to the
-             end of the final prompt sent to the LLM,
-             but that isn't persisted. ***/
-            stageDirections: null,
-            /*** @type MessageStateType | null @description the new state after the userMessage. ***/
-            messageState: {'someKey': this.myInternalState['someKey']},
-            /*** @type null | string @description If not null, the user's message itself is replaced
-             with this value, both in what's sent to the LLM and in the database. ***/
-            modifiedMessage: null,
-            /*** @type null | string @description A system message to append to the end of this message.
-             This is unique in that it shows up in the chat log and is sent to the LLM in subsequent messages,
-             but it's shown as coming from a system user and not any member of the chat. If you have things like
-             computed stat blocks that you want to show in the log, but don't want the LLM to start trying to
-             mimic/output them, they belong here. ***/
-            systemMessage: null,
-            /*** @type null | string @description an error message to show
-             briefly at the top of the screen, if any. ***/
-            error: null,
-            chatState: null,
-        };
+    return {
+      // Conservative: set text where the template expects it.
+      // The exact field names depend on template/library, so keep both common shapes.
+      userMessage: payload?.userMessage ? { ...payload.userMessage, text: newUserText } : undefined,
+      message: payload?.message ? { ...payload.message, text: newUserText } : undefined,
+
+      messageState,
+      chatState: this.chatState,
+      systemMessage,
+    };
+  }
+
+  // ---- After model response ----
+  async afterResponse(payload: any) {
+    const botText: string = payload?.botMessage?.text ?? payload?.message?.text ?? ''
+
+    let extractionSummary: string | null = null
+    if (this.config.auto_extract_after_response && botText) {
+      const prev = { ...this.chatState.current }
+      const patch = await this.extractFromText(botText, prev)
+      const next = { ...prev, ...patch }
+      const diffs = diffState(prev, next)
+      if (Object.keys(diffs).length > 0) {
+        this.chatState.current = next
+        extractionSummary = summarizeDiffs(diffs)
+      }
     }
 
-    async afterResponse(botMessage: Message): Promise<Partial<StageResponse<ChatStateType, MessageStateType>>> {
-        /***
-         This is called immediately after a response from the LLM.
-         ***/
-        const {
-            content,            /*** @type: string
-             @description The LLM's response. ***/
-            anonymizedId,       /*** @type: string
-             @description An anonymized ID that is unique to this individual
-              in this chat, but NOT their Chub ID. ***/
-            isBot             /*** @type: boolean
-             @description Whether this is from a bot, conceivably always true. ***/
-        } = botMessage;
-        return {
-            /*** @type null | string @description A string to add to the
-             end of the final prompt sent to the LLM,
-             but that isn't persisted. ***/
-            stageDirections: null,
-            /*** @type MessageStateType | null @description the new state after the botMessage. ***/
-            messageState: {'someKey': this.myInternalState['someKey']},
-            /*** @type null | string @description If not null, the bot's response itself is replaced
-             with this value, both in what's sent to the LLM subsequently and in the database. ***/
-            modifiedMessage: null,
-            /*** @type null | string @description an error message to show
-             briefly at the top of the screen, if any. ***/
-            error: null,
-            systemMessage: null,
-            chatState: null
-        };
+    const current: RPState = { ...this.chatState.current };
+    const stateBlock = buildStateBlock(this.config.prompt_block_label, current);
+
+    let systemMessage = this.config.include_in_system_message
+      ? `RP State Snapshot:\n${stateBlock}`
+      : null;
+    if (extractionSummary && this.config.include_in_system_message) {
+      systemMessage = `${systemMessage}\n\nAuto-extracted changes (afterResponse):\n${extractionSummary}`
     }
 
+    const botMessage = payload?.botMessage ? { ...payload.botMessage } : undefined;
+    const message = payload?.message ? { ...payload.message } : undefined;
 
-    render(): ReactElement {
-        /***
-         There should be no "work" done here. Just returning the React element to display.
-         If you're unfamiliar with React and prefer video, I've heard good things about
-         @link https://scrimba.com/learn/learnreact but haven't personally watched/used it.
+    return {
+      chatState: this.chatState,
+      systemMessage,
+      botMessage,
+      message,
+    };
+  }
 
-         For creating 3D and game components, react-three-fiber
-           @link https://docs.pmnd.rs/react-three-fiber/getting-started/introduction
-           and the associated ecosystem of libraries are quite good and intuitive.
-
-         Cuberun is a good example of a game built with them.
-           @link https://github.com/akarlsten/cuberun (Source)
-           @link https://cuberun.adamkarlsten.com/ (Demo)
-         ***/
-        return <div style={{
-            width: '100vw',
-            height: '100vh',
-            display: 'grid',
-            alignItems: 'stretch'
-        }}>
-            <div>Hello World! I'm an empty stage! With {this.myInternalState['someKey']}!</div>
-            <div>There is/are/were {this.myInternalState['numChars']} character(s)
-                and {this.myInternalState['numUsers']} human(s) here.
-            </div>
-        </div>;
+  private async extractFromText(text: string, prev: RPState) {
+    if (this.config.extraction_strategy === 'llm' && this.config.extraction_llm_endpoint) {
+      const llm = await llmExtract(this.config.extraction_llm_endpoint, text, prev, this.config.extraction_max_runtime_ms)
+      if (llm) return llm
     }
+    return heuristicExtract(text, prev, this.config.time_granularity)
+  }
 
+  // ---- On swipe/jump ----
+  async setState(payload: any) {
+    // Restore UI to the snapshot for that message node (if present).
+    const msgState: MessageState | null = payload?.messageState ?? null;
+    if (msgState?.snapshot) {
+      this.chatState.current = { ...DEFAULT_RP_STATE, ...msgState.snapshot };
+    }
+    return {
+      chatState: this.chatState,
+    };
+  }
+
+  // ---- UI ----
+  render() {
+    const s = this.chatState.current;
+
+    const set = (patch: Partial<RPState>) => {
+      this.chatState.current = { ...this.chatState.current, ...patch };
+      // Notify host/harness to re-render if attached
+      this._onChange?.();
+      // Rendering is allowed any time; heavy work is discouraged. Keep this lightweight.
+    };
+
+    return (
+      <div style={{ padding: 12, fontFamily: "sans-serif" }}>
+        <h3 style={{ margin: "0 0 8px 0" }}>RP State</h3>
+
+        <label>
+          In-RP Date/Time
+          <input
+            style={{ width: "100%", marginTop: 4, marginBottom: 8 }}
+            value={s.inRoleplayDateTime}
+            onChange={(e) => set({ inRoleplayDateTime: (e.target as HTMLInputElement).value })}
+          />
+        </label>
+
+        <label>
+          Place
+          <input
+            style={{ width: "100%", marginTop: 4, marginBottom: 8 }}
+            value={s.place}
+            onChange={(e) => set({ place: (e.target as HTMLInputElement).value })}
+          />
+        </label>
+
+        <label>
+          Mood
+          <input
+            style={{ width: "100%", marginTop: 4, marginBottom: 8 }}
+            value={s.mood}
+            onChange={(e) => set({ mood: (e.target as HTMLInputElement).value })}
+          />
+        </label>
+
+        <label>
+          Weather
+          <input
+            style={{ width: "100%", marginTop: 4, marginBottom: 8 }}
+            value={s.weather}
+            onChange={(e) => set({ weather: (e.target as HTMLInputElement).value })}
+          />
+        </label>
+
+        <label>
+          Scene Notes (clamped)
+          <textarea
+            style={{ width: "100%", marginTop: 4, minHeight: 80 }}
+            value={s.sceneNotes}
+            onChange={(e) => set({ sceneNotes: (e.target as HTMLTextAreaElement).value })}
+          />
+        </label>
+
+        <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
+          If “include_in_prompt” is enabled, this state is appended to your next message.
+        </div>
+      </div>
+    );
+  }
 }
