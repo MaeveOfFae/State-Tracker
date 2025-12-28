@@ -1,6 +1,6 @@
 import * as chrono from 'chrono-node'
 import { PLACE_NOUNS as placeNouns, AMBIGUOUS_PLACE_NOUNS as ambiguousPlaceNouns } from './places'
-import { canonicalMoods, moodSynonyms } from './moods'
+import * as moods from './moods'
 
 export type RPState = {
   inRoleplayDateTime: string
@@ -47,6 +47,21 @@ function chooseBest<T>(cands: Candidate<T>[], minScore = 0.6): T | undefined {
   if (!cands.length) return undefined
   const best = cands.reduce((a, b) => (b.score > a.score ? b : a))
   return best.score >= minScore ? best.value : undefined
+}
+
+function normMoodKey(s: string): string {
+  return s.toLowerCase().replace(/[^a-z]+/g, '')
+}
+
+// Build a regex that matches any canonical mood (multi-word supported) with flexible spacing
+const canonicalMoodPattern = buildAlternation(moods.canonicalMoods.map(m => m.replace(/\s+/g, ' ')))
+const canonicalMoodRegex = new RegExp(`\\b(?:${canonicalMoodPattern.replace(/\s+/g, '\\s+')})\\b`, 'i')
+
+// Blacklist patterns that cause false positives
+function isBlacklistedMoodContext(text: string, start: number, end: number, canonical: string): boolean {
+  const after = text.slice(end, Math.min(text.length, end + 16)).toLowerCase()
+  if (canonical === 'happy' && /\bbirthday\b/.test(after)) return true
+  return false
 }
 
 function escapeRegex(text: string): string {
@@ -234,23 +249,50 @@ export function heuristicExtract(text: string, prev: RPState, granularity: 'date
   const placeStr = extractPlace(text)
   if (placeStr) patch.place = placeStr
 
-  // Mood extraction with patterns and scoring
+  // Mood extraction with multi-word support, negation, intensity scoring
   const moodCands: Candidate<string>[] = []
   const lower = text.toLowerCase()
-  // Pattern: "I feel X" / "feeling X" / "I'm X"
-  const feel = lower.match(/\b(i\s*(?:am|'m|m)\s+([a-z\-']+)|i\s*feel(?:ing)?\s+([a-z\-']+))\b/)
-  const moodWord = feel?.[2] || feel?.[3]
-  if (moodWord) {
-    const norm = moodSynonyms[moodWord] || moodWord
-    if (canonicalMoods.includes(norm)) moodCands.push({ value: norm, score: 0.85 })
+
+  // Helper to push a mood candidate with intensity-aware score
+  const pushMood = (canonical: string, base: number, spanStart: number, spanEnd: number) => {
+    if (!moods.canonicalMoods.includes(canonical)) return
+    if (hasNegation(lower, spanStart, spanEnd)) return
+    if (isBlacklistedMoodContext(lower, spanStart, spanEnd, canonical)) return
+    const intensity = (moods as any).moodIntensity?.[normMoodKey(canonical)] ?? 0.5
+    const score = Math.max(0, Math.min(1, base + (intensity - 0.5) * 0.3))
+    moodCands.push({ value: canonical, score })
   }
-  // Fallback: any known mood word
-  for (const m of canonicalMoods) {
-    const idx = lower.indexOf(m)
-    if (idx >= 0 && !hasNegation(lower, idx, idx + m.length)) {
-      moodCands.push({ value: m, score: 0.65 })
+
+  // Pattern: I am/I'm/feel/feeling <phrase> (up to two words)
+  const feelRe = /(\bi\s*(?:am|'m|m|feel(?:ing)?)\s+)([a-z][a-z\-']+(?:\s+[a-z][a-z\-']+)*)/i
+  const fm = feelRe.exec(text)
+  if (fm && fm[2]) {
+    const phrase = fm[2].trim().toLowerCase()
+    // Normalize phrase: try direct canonical match first
+    const candidates = [phrase]
+    // Also try normalized key to lookup synonym
+    const normKey = normMoodKey(phrase)
+    const syn = (moods as any).moodSynonyms?.[phrase] || (moods as any).moodSynonyms?.[normKey]
+    if (syn) candidates.unshift(syn)
+    for (const c of candidates) {
+      // If c is multi-word, check canonical list contains it
+      const canonical = moods.canonicalMoods.includes(c) ? c : ((moods as any).moodSynonyms?.[c] || c)
+      if (moods.canonicalMoods.includes(canonical)) {
+        pushMood(canonical, 0.85, fm.index!, fm.index! + fm[0].length)
+        break
+      }
     }
   }
+
+  // Fallback: scan for any canonical mood phrase anywhere in text
+  for (const m of moods.canonicalMoods) {
+    const pattern = new RegExp(`\\b${escapeRegex(m).replace(/\s+/g, '\\s+')}\\b`, 'i')
+    const match = pattern.exec(text)
+    if (match) {
+      pushMood(m, 0.65, match.index, match.index + match[0].length)
+    }
+  }
+
   const mood = chooseBest(moodCands)
   if (mood) patch.mood = mood
 
