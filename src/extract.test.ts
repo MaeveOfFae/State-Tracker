@@ -1,5 +1,5 @@
 // Batch test harness for extraction heuristics
-import { heuristicExtract } from './extract'
+import { heuristicExtractWithMeta } from './extract'
 import { getMoodFeatures } from './moods'
 
 const TESTS = [
@@ -56,9 +56,10 @@ const TESTS = [
 function runTests() {
   let pass = 0, fail = 0
   for (const { input, expect } of TESTS) {
-    const result = heuristicExtract(input, {
+    const { patch, meta } = heuristicExtractWithMeta(input, {
       inRoleplayDateTime: '', place: '', mood: '', weather: '', sceneNotes: ''
-    }, 'datetime') as Record<string, any>
+    }, 'datetime')
+    const result = patch as Record<string, any>
     const exp = expect as Record<string, any>
     const moodFeatures = result.mood ? getMoodFeatures(result.mood) : null
     let ok = true
@@ -66,13 +67,18 @@ function runTests() {
       if (exp[k] === true && !result[k]) ok = false
       else if (exp[k] === null && result[k]) ok = false
       else if (typeof exp[k] === 'string' && result[k] !== exp[k]) ok = false
+      // If we expected a field, prefer span presence too (best effort)
+      if (ok && exp[k] && meta?.spans && (k in meta.spans)) {
+        const sp: any = (meta.spans as any)[k]
+        if (sp && (typeof sp.start !== 'number' || typeof sp.end !== 'number')) ok = false
+      }
     }
     if (ok) {
       pass++
-      console.log(`PASS: "${input}" →`, result, moodFeatures)
+      console.log(`PASS: "${input}" →`, result, moodFeatures, meta)
     } else {
       fail++
-      console.error(`FAIL: "${input}" →`, result, moodFeatures, 'expected:', expect)
+      console.error(`FAIL: "${input}" →`, result, moodFeatures, meta, 'expected:', expect)
     }
   }
   console.log(`\n${pass} passed, ${fail} failed.`)
