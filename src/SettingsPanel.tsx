@@ -8,10 +8,41 @@ type Props = {
 
 export default function SettingsPanel({ cfg, onUpdate, onReset }: Props) {
   const [local, setLocal] = useState<any>({ ...cfg })
-  // Sync local when cfg changes outside (e.g., via Chat Settings or reset)
+  // Sync local when cfg meaningfully changes outside (e.g., reset or external config load)
   useEffect(() => {
-    setLocal({ ...cfg })
-  }, [JSON.stringify(cfg)])
+    const keys: Array<keyof typeof local> = [
+      'include_in_prompt',
+      'include_in_system_message',
+      'auto_extract_before_prompt',
+      'auto_extract_after_response',
+      'only_show_on_change',
+      'diagnostics',
+      'extraction_strategy',
+      'extraction_llm_endpoint',
+      'prompt_block_label',
+      'max_note_chars',
+      'time_granularity',
+    ]
+    let different = false
+    for (const k of keys) {
+      // @ts-ignore
+      if (local?.[k] !== (cfg as any)?.[k]) { different = true; break }
+    }
+    if (different) setLocal({ ...cfg })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    cfg.include_in_prompt,
+    cfg.include_in_system_message,
+    cfg.auto_extract_before_prompt,
+    cfg.auto_extract_after_response,
+    cfg.only_show_on_change,
+    cfg.diagnostics,
+    cfg.extraction_strategy,
+    cfg.extraction_llm_endpoint,
+    cfg.prompt_block_label,
+    cfg.max_note_chars,
+    cfg.time_granularity,
+  ])
 
   const update = (patch: any) => {
     setLocal((prev: any) => ({ ...prev, ...patch }))
