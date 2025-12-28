@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 
 type Props = {
   cfg: any
@@ -7,57 +7,68 @@ type Props = {
 }
 
 export default function SettingsPanel({ cfg, onUpdate, onReset }: Props) {
+  const [local, setLocal] = useState<any>({ ...cfg })
+  // Sync local when cfg changes outside (e.g., via Chat Settings or reset)
+  useEffect(() => {
+    setLocal({ ...cfg })
+  }, [JSON.stringify(cfg)])
+
+  const update = (patch: any) => {
+    setLocal((prev: any) => ({ ...prev, ...patch }))
+    onUpdate(patch)
+  }
+
   return (
     <>
       <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
             type="checkbox"
-            checked={!!cfg.include_in_prompt}
-            onChange={(e) => onUpdate({ include_in_prompt: (e.target as HTMLInputElement).checked })}
+            checked={!!local.include_in_prompt}
+            onChange={(e) => update({ include_in_prompt: (e.target as HTMLInputElement).checked })}
           /> include_in_prompt
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
             type="checkbox"
-            checked={!!cfg.include_in_system_message}
-            onChange={(e) => onUpdate({ include_in_system_message: (e.target as HTMLInputElement).checked })}
+            checked={!!local.include_in_system_message}
+            onChange={(e) => update({ include_in_system_message: (e.target as HTMLInputElement).checked })}
           /> include_in_system_message
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
             type="checkbox"
-            checked={!!cfg.auto_extract_before_prompt}
-            onChange={(e) => onUpdate({ auto_extract_before_prompt: (e.target as HTMLInputElement).checked })}
+            checked={!!local.auto_extract_before_prompt}
+            onChange={(e) => update({ auto_extract_before_prompt: (e.target as HTMLInputElement).checked })}
           /> auto_extract_before_prompt
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
             type="checkbox"
-            checked={!!cfg.auto_extract_after_response}
-            onChange={(e) => onUpdate({ auto_extract_after_response: (e.target as HTMLInputElement).checked })}
+            checked={!!local.auto_extract_after_response}
+            onChange={(e) => update({ auto_extract_after_response: (e.target as HTMLInputElement).checked })}
           /> auto_extract_after_response
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
             type="checkbox"
-            checked={cfg.only_show_on_change ?? true}
-            onChange={(e) => onUpdate({ only_show_on_change: (e.target as HTMLInputElement).checked })}
+            checked={local.only_show_on_change ?? true}
+            onChange={(e) => update({ only_show_on_change: (e.target as HTMLInputElement).checked })}
           /> only_show_on_change
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
             type="checkbox"
-            checked={!!cfg.diagnostics}
-            onChange={(e) => onUpdate({ diagnostics: (e.target as HTMLInputElement).checked })}
+            checked={!!local.diagnostics}
+            onChange={(e) => update({ diagnostics: (e.target as HTMLInputElement).checked })}
           /> diagnostics
         </label>
 
         <label style={{ display: 'block' }}>
           extraction_strategy
           <select
-            value={cfg.extraction_strategy}
-            onChange={(e) => onUpdate({ extraction_strategy: (e.target as HTMLSelectElement).value as any })}
+            value={local.extraction_strategy}
+            onChange={(e) => update({ extraction_strategy: (e.target as HTMLSelectElement).value as any })}
             style={{ width: '100%', marginTop: 4 }}
           >
             <option value="heuristic">heuristic</option>
@@ -69,8 +80,8 @@ export default function SettingsPanel({ cfg, onUpdate, onReset }: Props) {
           extraction_llm_endpoint
           <input
             style={{ width: '100%', marginTop: 4 }}
-            value={cfg.extraction_llm_endpoint}
-            onChange={(e) => onUpdate({ extraction_llm_endpoint: (e.target as HTMLInputElement).value })}
+            value={local.extraction_llm_endpoint}
+            onChange={(e) => update({ extraction_llm_endpoint: (e.target as HTMLInputElement).value })}
             placeholder="https://your-endpoint"
           />
         </label>
@@ -79,8 +90,8 @@ export default function SettingsPanel({ cfg, onUpdate, onReset }: Props) {
           prompt_block_label
           <input
             style={{ width: '100%', marginTop: 4 }}
-            value={cfg.prompt_block_label}
-            onChange={(e) => onUpdate({ prompt_block_label: (e.target as HTMLInputElement).value })}
+            value={local.prompt_block_label}
+            onChange={(e) => update({ prompt_block_label: (e.target as HTMLInputElement).value })}
           />
         </label>
 
@@ -89,16 +100,16 @@ export default function SettingsPanel({ cfg, onUpdate, onReset }: Props) {
           <input
             type="number"
             style={{ width: '100%', marginTop: 4 }}
-            value={cfg.max_note_chars}
-            onChange={(e) => onUpdate({ max_note_chars: parseInt((e.target as HTMLInputElement).value || '0', 10) })}
+            value={local.max_note_chars}
+            onChange={(e) => update({ max_note_chars: parseInt((e.target as HTMLInputElement).value || '0', 10) })}
           />
         </label>
 
         <label>
           time_granularity
           <select
-            value={cfg.time_granularity}
-            onChange={(e) => onUpdate({ time_granularity: (e.target as HTMLSelectElement).value as any })}
+            value={local.time_granularity}
+            onChange={(e) => update({ time_granularity: (e.target as HTMLSelectElement).value as any })}
             style={{ width: '100%', marginTop: 4 }}
           >
             <option value="date">date</option>
