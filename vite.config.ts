@@ -11,9 +11,14 @@ export default defineConfig({
     host: true, // listen on 0.0.0.0
     port: 5173,
     strictPort: true,
+    cors: true,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+    },
     hmr: {
       host: hmrHost,
       port: hmrPort,
+      overlay: false,
     },
   },
   build: {

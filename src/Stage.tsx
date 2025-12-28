@@ -375,77 +375,63 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
 
     const set = (patch: Partial<RPState>) => {
       this.chatState.current = { ...this.chatState.current, ...patch };
-      // Notify host/harness to re-render if attached
       this._onChange?.();
-      // Rendering is allowed any time; heavy work is discouraged. Keep this lightweight.
     };
 
     return (
+      <div style={{ padding: 12, fontFamily: 'sans-serif' }}>
+        <h3 style={{ margin: '0 0 8px 0' }}>RP State</h3>
+
+        <label>
+          In-RP Date/Time
+          <input
+            style={{ width: '100%', marginTop: 4, marginBottom: 8 }}
+            value={s.inRoleplayDateTime}
+            onChange={(e) => set({ inRoleplayDateTime: (e.target as HTMLInputElement).value })}
+          />
+        </label>
+
+        <label>
+          Place
+          <input
+            style={{ width: '100%', marginTop: 4, marginBottom: 8 }}
+            value={s.place}
+            onChange={(e) => set({ place: (e.target as HTMLInputElement).value })}
+          />
+        </label>
+
+        <label>
+          Mood
+          <input
+            style={{ width: '100%', marginTop: 4, marginBottom: 8 }}
+            value={s.mood}
+            onChange={(e) => set({ mood: (e.target as HTMLInputElement).value })}
+          />
+        </label>
+
+        <label>
+          Weather
+          <input
+            style={{ width: '100%', marginTop: 4, marginBottom: 8 }}
+            value={s.weather}
+            onChange={(e) => set({ weather: (e.target as HTMLInputElement).value })}
+          />
+        </label>
+
+        <label>
+          Scene Notes (clamped)
+          <textarea
+            style={{ width: '100%', marginTop: 4, minHeight: 80 }}
+            value={s.sceneNotes}
+            onChange={(e) => set({ sceneNotes: (e.target as HTMLTextAreaElement).value })}
+          />
+        </label>
+
         <details style={{ marginTop: 12 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Settings</summary>
-          <Suspense fallback={<div style={{ marginTop: 8 }}>Loading…</div>}> 
-            <SettingsPanel cfg={cfg} onUpdate={(p:any) => this.updateConfig(p)} onReset={() => this.resetToDefaults()} />
+          <Suspense fallback={<div style={{ marginTop: 8 }}>Loading…</div>}>
+            <SettingsPanel cfg={cfg} onUpdate={(p: any) => this.updateConfig(p)} onReset={() => this.resetToDefaults()} />
           </Suspense>
-        </details>
-                onChange={(e) => this.updateConfig({ extraction_strategy: (e.target as HTMLSelectElement).value as any })}
-                style={{ width: '100%', marginTop: 4 }}
-              >
-                <option value="heuristic">heuristic</option>
-                <option value="llm">llm</option>
-              </select>
-            </label>
-
-            <label style={{ gridColumn: '1 / span 2' }}>
-              extraction_llm_endpoint
-              <input
-                style={{ width: '100%', marginTop: 4 }}
-                value={cfg.extraction_llm_endpoint}
-                onChange={(e) => this.updateConfig({ extraction_llm_endpoint: (e.target as HTMLInputElement).value })}
-                placeholder="https://your-endpoint"
-              />
-            </label>
-
-            <label>
-              prompt_block_label
-              <input
-                style={{ width: '100%', marginTop: 4 }}
-                value={cfg.prompt_block_label}
-                onChange={(e) => this.updateConfig({ prompt_block_label: (e.target as HTMLInputElement).value })}
-              />
-            </label>
-
-            <label>
-              max_note_chars
-              <input
-                type="number"
-                style={{ width: '100%', marginTop: 4 }}
-                value={cfg.max_note_chars}
-                onChange={(e) => this.updateConfig({ max_note_chars: parseInt((e.target as HTMLInputElement).value || '0', 10) })}
-              />
-            </label>
-
-            <label>
-              time_granularity
-              <select
-                value={cfg.time_granularity}
-                onChange={(e) => this.updateConfig({ time_granularity: (e.target as HTMLSelectElement).value as any })}
-                style={{ width: '100%', marginTop: 4 }}
-              >
-                <option value="date">date</option>
-                <option value="datetime">datetime</option>
-              </select>
-            </label>
-          </div>
-
-          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-            Settings here affect only this session. Use Chat Settings to persist defaults.
-          </div>
-
-          <div style={{ marginTop: 8 }}>
-            <button type="button" onClick={() => this.resetToDefaults()} style={{ padding: '6px 10px' }}>
-              Reset to defaults
-            </button>
-          </div>
         </details>
       </div>
     );
