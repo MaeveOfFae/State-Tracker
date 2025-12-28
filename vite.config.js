@@ -9,9 +9,14 @@ export default defineConfig({
         host: true, // listen on 0.0.0.0
         port: 5173,
         strictPort: true,
+        cors: true,
+        headers: {
+            'Access-Control-Allow-Origin': '*',
+        },
         hmr: {
             host: hmrHost,
             port: hmrPort,
+            overlay: false,
         },
     },
     build: {
@@ -20,6 +25,13 @@ export default defineConfig({
                 main: resolve(__dirname, 'index.html'), // stages runner (root)
                 harness: resolve(__dirname, 'index-harness.html'),
                 tests: resolve(__dirname, 'test-harness.html'),
+                batch: resolve(__dirname, 'batch-tests.html'),
+            },
+            output: {
+                manualChunks: {
+                    react: ['react', 'react-dom'],
+                    chrono: ['chrono-node'],
+                },
             },
         },
     },
