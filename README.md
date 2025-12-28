@@ -46,6 +46,12 @@ Local dev options
 - Harness page:
 	- yarn dev:stages
 	- Opens /index-harness.html which mounts src/main.tsx
+In-chat staging (recommended)
+ - Build then serve preview (avoids HMR-in-iframe quirks):
+	 - yarn build
+	 - yarn preview:host
+	 - Set Chat Settings → Staging URL to http://localhost:4173
+	 - Hard-reload the chat page
 
 Typical workflow
 1. nvm use

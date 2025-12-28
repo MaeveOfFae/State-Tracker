@@ -1,1 +1,1 @@
-{"root":["./src/Stage.tsx","./src/extract.ts","./src/index.ts","./src/main.tsx","./src/moods.ts","./src/places.ts","./src/vite-env.d.ts"],"version":"5.9.3"}
+{"root":["./src/Stage.tsx","./src/extract.ts","./src/index.ts","./src/main.tsx","./src/moods.ts","./src/places.ts","./src/test-harness.tsx","./src/vite-env.d.ts"],"version":"5.9.3"}

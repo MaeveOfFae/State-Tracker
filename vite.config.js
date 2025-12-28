@@ -19,6 +19,7 @@ export default defineConfig({
             input: {
                 main: resolve(__dirname, 'index.html'), // stages runner (root)
                 harness: resolve(__dirname, 'index-harness.html'),
+                tests: resolve(__dirname, 'test-harness.html'),
             },
         },
     },

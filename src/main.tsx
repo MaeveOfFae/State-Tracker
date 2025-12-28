@@ -76,24 +76,37 @@ function Harness() {
     })
   }, [includeInPrompt, includeInSystem, autoBefore, autoAfter, onlyOnChange, strategy, endpoint, label, maxNotes, granularity])
 
+  // Debounce helper
+  function debounce<T extends (...args: any[]) => any>(fn: T, ms: number) {
+    let t: any
+    return (...args: Parameters<T>) => {
+      clearTimeout(t)
+      t = setTimeout(() => fn(...args), ms)
+    }
+  }
+
+  const debouncedBefore = React.useMemo(() => debounce(async (text: string) => {
+    const r = await stageRef.current!.beforePrompt({ userMessage: { text, content: text } })
+    setResult(r)
+  }, 300), [])
+
+  const debouncedAfter = React.useMemo(() => debounce(async (text: string) => {
+    const r = await stageRef.current!.afterResponse({ botMessage: { text, content: text } })
+    setAfterResult(r)
+  }, 300), [])
+
   // Automatically run beforePrompt when userText changes if enabled
   useEffect(() => {
     if (!loaded) return
     if (!autoBefore) return
-    ;(async () => {
-      const r = await stageRef.current!.beforePrompt({ userMessage: { text: userText, content: userText } })
-      setResult(r)
-    })()
+    debouncedBefore(userText)
   }, [userText, autoBefore, loaded])
 
   // Automatically run afterResponse when botText changes if enabled
   useEffect(() => {
     if (!loaded) return
     if (!autoAfter) return
-    ;(async () => {
-      const r = await stageRef.current!.afterResponse({ botMessage: { text: botText, content: botText } })
-      setAfterResult(r)
-    })()
+    debouncedAfter(botText)
   }, [botText, autoAfter, loaded])
 
   return (

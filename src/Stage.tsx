@@ -86,6 +86,7 @@ type Config = {
 export class Stage extends StageBase<any, ChatState, MessageState, Config> {
   private chatState: ChatState = { current: { ...DEFAULT_RP_STATE } };
   private _onChange?: () => void;
+  private _env: string | undefined;
 
   private config: Config = {
     include_in_prompt: false,
@@ -105,6 +106,7 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
     super(init);
     // init/config payload shapes are not specified in docs; treat as optional.
     const cfg = init?.config ?? init?.configuration ?? null;
+    this._env = init?.environment || undefined
     if (cfg && typeof cfg === "object") {
       this.config = {
         include_in_prompt: cfg.include_in_prompt ?? this.config.include_in_prompt,
@@ -124,6 +126,18 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
   }
 
   async load() {
+    // Try to hydrate stored per-chat config
+    try {
+      const stored = await this.storage.query({ keys: ['rp_state_config'], character_ids: null, user_ids: null, persona_ids: null, chat_local: true })
+      const v = stored?.data?.find(d => d.key === 'rp_state_config')?.value as Partial<Config> | undefined
+      if (v && typeof v === 'object') {
+        this.config = { ...this.config, ...v }
+      }
+    } catch {
+      // ignore storage failures
+    }
+    // Log readiness for staging troubleshooting
+    try { console.info(`Stage ready (${this._env ?? 'unknown env'})`) } catch {}
     // Return initial state; StageBase will persist state as needed.
     return {
       initState: null,
@@ -142,6 +156,10 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
   updateConfig(patch: Partial<typeof this.config>) {
     this.config = { ...this.config, ...patch }
     this._onChange?.()
+    // Fire-and-forget persist to chat-local storage
+    try {
+      this.storage.set('rp_state_config', this.config).forChat()
+    } catch {}
   }
 
   // ---- Before user prompt ----
