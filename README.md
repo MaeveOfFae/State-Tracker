@@ -6,7 +6,6 @@ A Chub AI Stage that maintains a structured RP state (date/time, place, mood, we
 
 - public/chub_meta.yaml — Stage metadata, config schema, and state schemas
 - src/Stage.tsx — Stage implementation (constructor, load, beforePrompt, afterResponse, setState, render)
-- src/SettingsPanel.tsx — Lazy-loaded settings UI
 - src/entry-stages.tsx — Entry for stages runner (mounts App)
 - src/App.tsx — Chooses ReactRunner (staging) vs TestStageRunner (dev)
 - src/main.tsx — Local harness UI (manual testing)
@@ -57,6 +56,7 @@ Local dev options
 - Test pages:
 	- yarn dev:tests → /test-harness.html
 	- yarn dev:batch → /batch-tests.html (console output)
+Note: This stage runs in background (position: NONE); render returns a hidden node.
 
 In-chat staging (recommended)
 - Build then serve preview (prevents HMR/iframe handshake issues):

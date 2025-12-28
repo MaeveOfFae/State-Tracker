@@ -3,7 +3,6 @@
 // We only implement documented lifecycle functions: constructor, load, beforePrompt, afterResponse, setState, render.
 
 import React from "react";
-import SettingsPanel from './SettingsPanel'
 import { StageBase } from "@chub-ai/stages-ts";
 import { heuristicExtract, heuristicExtractWithMeta, llmExtract, diffState, summarizeDiffs } from './extract'
 
@@ -370,68 +369,7 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
 
   // ---- UI ----
   render() {
-    const s = this.chatState.current;
-    const cfg = this.config;
-
-    const set = (patch: Partial<RPState>) => {
-      this.chatState.current = { ...this.chatState.current, ...patch };
-      this._onChange?.();
-    };
-
-    return (
-      <div style={{ padding: 12, fontFamily: 'sans-serif' }}>
-        <h3 style={{ margin: '0 0 8px 0' }}>RP State</h3>
-
-        <label>
-          In-RP Date/Time
-          <input
-            style={{ width: '100%', marginTop: 4, marginBottom: 8 }}
-            value={s.inRoleplayDateTime}
-            onChange={(e) => set({ inRoleplayDateTime: (e.target as HTMLInputElement).value })}
-          />
-        </label>
-
-        <label>
-          Place
-          <input
-            style={{ width: '100%', marginTop: 4, marginBottom: 8 }}
-            value={s.place}
-            onChange={(e) => set({ place: (e.target as HTMLInputElement).value })}
-          />
-        </label>
-
-        <label>
-          Mood
-          <input
-            style={{ width: '100%', marginTop: 4, marginBottom: 8 }}
-            value={s.mood}
-            onChange={(e) => set({ mood: (e.target as HTMLInputElement).value })}
-          />
-        </label>
-
-        <label>
-          Weather
-          <input
-            style={{ width: '100%', marginTop: 4, marginBottom: 8 }}
-            value={s.weather}
-            onChange={(e) => set({ weather: (e.target as HTMLInputElement).value })}
-          />
-        </label>
-
-        <label>
-          Scene Notes (clamped)
-          <textarea
-            style={{ width: '100%', marginTop: 4, minHeight: 80 }}
-            value={s.sceneNotes}
-            onChange={(e) => set({ sceneNotes: (e.target as HTMLTextAreaElement).value })}
-          />
-        </label>
-
-        <details style={{ marginTop: 12 }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Settings</summary>
-          <SettingsPanel cfg={cfg} onUpdate={(p: any) => this.updateConfig(p)} onReset={() => this.resetToDefaults()} />
-        </details>
-      </div>
-    );
+    // No UI: background-only stage (position: NONE). Return a hidden placeholder to satisfy interface.
+    return (<div style={{ display: 'none' }} />);
   }
 }

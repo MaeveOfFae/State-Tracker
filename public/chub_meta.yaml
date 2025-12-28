@@ -3,7 +3,7 @@ description: Track in-RP date/time/place/mood/weather and optionally inject it i
 tags:
   - roleplay
   - state
-position: RIGHT
+position: NONE
 
 config_schema:
   title: RP State Tracker
