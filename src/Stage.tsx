@@ -2,8 +2,8 @@
 // NOTE: This file assumes the stage-template already wires up the StageBase interface.
 // We only implement documented lifecycle functions: constructor, load, beforePrompt, afterResponse, setState, render.
 
-import React, { Suspense } from "react";
-const SettingsPanel = React.lazy(() => import('./SettingsPanel'))
+import React from "react";
+import SettingsPanel from './SettingsPanel'
 import { StageBase } from "@chub-ai/stages-ts";
 import { heuristicExtract, heuristicExtractWithMeta, llmExtract, diffState, summarizeDiffs } from './extract'
 
@@ -429,9 +429,7 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
 
         <details style={{ marginTop: 12 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Settings</summary>
-          <Suspense fallback={<div style={{ marginTop: 8 }}>Loading…</div>}>
-            <SettingsPanel cfg={cfg} onUpdate={(p: any) => this.updateConfig(p)} onReset={() => this.resetToDefaults()} />
-          </Suspense>
+          <SettingsPanel cfg={cfg} onUpdate={(p: any) => this.updateConfig(p)} onReset={() => this.resetToDefaults()} />
         </details>
       </div>
     );
