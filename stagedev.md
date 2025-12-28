@@ -331,3 +331,36 @@ The documentation does not specify:
 * Error handling behavior
 * Conditional control flow
 * Additional scope types
+
+---
+
+## 10. Quick Manual Verification Examples
+
+Use these short lines in the local test harness to sanity check extraction:
+
+* Date/Time
+  * Let's meet tomorrow evening at The Grand Library.
+  * We'll see each other in an hour at the station.
+  * Let's meet from 7 to 9pm at the cafe.
+  * I'll ping you in a few minutes.
+
+* Place
+  * Headed to the cafe near the station in an hour.
+  * We wandered through the Grand Library.
+  * We'll be at "Midnight Diner" around 8pm.
+
+* Mood
+  * I'm feeling a bit anxious about it.
+  * She felt homesick and lonely in the big city.
+  * The mood was tense, but the room was warm.
+  * He was happy. Happy birthday! (should not map to happy)
+
+* Weather
+  * It's pouring rain and I'm exhausted.
+  * The air is chilly and the sky is overcast.
+  * The mood was tense, but the room was warm. (tests ambient term handling)
+
+Local tools
+
+* Interactive UI harness: run `yarn dev:tests` and edit lines live in the left panel.
+* Console batch harness: run `yarn dev:batch` and review PASS/FAIL in the console.

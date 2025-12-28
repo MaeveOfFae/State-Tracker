@@ -12,7 +12,7 @@ export type RPState = {
 
 type PartialState = Partial<RPState>
 
-type Candidate<T> = { value: T; score: number }
+type Candidate<T> = { value: T; score: number; start?: number; end?: number }
 
 // canonicalMoods and moodSynonyms moved to ./moods for maintainability
 
@@ -35,6 +35,10 @@ function firstMatch(text: string, words: string[]): string | undefined {
     if (lower.includes(w)) return w
   }
   return undefined
+}
+
+function findIndexCI(haystack: string, needle: string): number {
+  return haystack.toLowerCase().indexOf(needle.toLowerCase())
 }
 
 function hasNegation(text: string, windowStart: number, windowEnd: number): boolean {
@@ -97,11 +101,20 @@ const ambiguousVerbRegex = new RegExp(
 function extractAmbiguousPlace(text: string): Candidate<string> | undefined {
   const lower = text.toLowerCase()
   const detMatch = lower.match(ambiguousDeterminerRegex)
-  if (detMatch && detMatch[1]) return { value: detMatch[1], score: 0.45 }
+  if (detMatch && detMatch[1]) {
+    const idx = findIndexCI(text, detMatch[1])
+    return { value: detMatch[1], score: 0.45, start: idx >= 0 ? idx : undefined, end: idx >= 0 ? idx + detMatch[1].length : undefined }
+  }
   const prepMatch = lower.match(ambiguousPrepositionRegex)
-  if (prepMatch && prepMatch[1]) return { value: prepMatch[1], score: 0.5 }
+  if (prepMatch && prepMatch[1]) {
+    const idx = findIndexCI(text, prepMatch[1])
+    return { value: prepMatch[1], score: 0.5, start: idx >= 0 ? idx : undefined, end: idx >= 0 ? idx + prepMatch[1].length : undefined }
+  }
   const verbMatch = lower.match(ambiguousVerbRegex)
-  if (verbMatch && verbMatch[1]) return { value: verbMatch[1], score: 0.5 }
+  if (verbMatch && verbMatch[1]) {
+    const idx = findIndexCI(text, verbMatch[1])
+    return { value: verbMatch[1], score: 0.5, start: idx >= 0 ? idx : undefined, end: idx >= 0 ? idx + verbMatch[1].length : undefined }
+  }
   return undefined
 }
 
@@ -142,9 +155,11 @@ function extractPlace(text: string): Candidate<string> | undefined {
       const detMatch = lower.slice(Math.max(0, idx - 6), idx).match(/(the|my|our|his|her|their|a|an)\s+$/)
       if (detMatch) {
         const phrase = `${detMatch[1]} ${noun}`
-        cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.75) })
+        const idx2 = findIndexCI(original, phrase)
+        cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.75), start: idx2 >= 0 ? idx2 : undefined, end: idx2 >= 0 ? idx2 + phrase.length : undefined })
       } else {
-        cands.push({ value: noun, score: boostIfSpecific(noun, 0.7) })
+        const idx2 = findIndexCI(original, noun)
+        cands.push({ value: noun, score: boostIfSpecific(noun, 0.7), start: idx2 >= 0 ? idx2 : undefined, end: idx2 >= 0 ? idx2 + noun.length : undefined })
       }
     }
   }
@@ -152,13 +167,15 @@ function extractPlace(text: string): Candidate<string> | undefined {
   const proper = original.match(/\b(?:at|in|inside|outside|by|near|around|on)\s+((?:The\s+)?[A-Z][\w'\-]+(?:\s+(?:of|the|and|&|at))?\s*(?:[A-Z][\w'\-]+){0,5})/)
   if (proper && proper[1]) {
     const phrase = proper[1].trim()
-    cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.9) })
+    const idx2 = findIndexCI(original, phrase)
+    cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.9), start: idx2 >= 0 ? idx2 : undefined, end: idx2 >= 0 ? idx2 + phrase.length : undefined })
   }
   // 3) Quoted place
   const quoted = original.match(/\b(?:at|in|inside|outside|by|near|around|on)\s+"([^"\n]{3,60})"/i)
   if (quoted && quoted[1]) {
     const phrase = quoted[1].trim()
-    cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.85) })
+    const idx2 = findIndexCI(original, phrase)
+    cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.85), start: idx2 >= 0 ? idx2 : undefined, end: idx2 >= 0 ? idx2 + phrase.length : undefined })
   }
   // 4) Generic preposition-based capture (allows lowercase nouns)
   const prep = /\b(?:at|in|on|inside|by|near|around|outside|behind|beside|under|over|between)\s+(?:the\s+|a\s+|an\s+|my\s+|our\s+|his\s+|her\s+|their\s+)?([^\n\.,;:!?]{3,60})/i
@@ -166,7 +183,8 @@ function extractPlace(text: string): Candidate<string> | undefined {
   if (m && m[1]) {
     let phrase = m[1].trim()
     phrase = phrase.replace(/\s+(now|today|tonight|this\s+(morning|afternoon|evening|night))$/i, '').trim()
-    cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.6) })
+    const idx2 = findIndexCI(original, phrase)
+    cands.push({ value: phrase, score: boostIfSpecific(phrase, 0.6), start: idx2 >= 0 ? idx2 : undefined, end: idx2 >= 0 ? idx2 + phrase.length : undefined })
   }
   // 5) Ambiguous nouns only with nearby context words
   const ambig = extractAmbiguousPlace(text)
@@ -222,7 +240,7 @@ function parseRelativeDuration(text: string, now: Date, granularity: 'date' | 'd
   else if (unit.startsWith('day')) d.setDate(d.getDate() + qty)
   else if (unit.startsWith('week')) d.setDate(d.getDate() + qty * 7)
   else return undefined
-  return { value: formatDate(d, granularity), score: 0.8 }
+  return { value: formatDate(d, granularity), score: 0.8, start: m.index ?? undefined, end: m.index != null ? (m.index + m[0].length) : undefined }
 }
 
 function parseTimeRange(text: string, now: Date, granularity: 'date' | 'datetime'): Candidate<string> | undefined {
@@ -248,7 +266,7 @@ function parseTimeRange(text: string, now: Date, granularity: 'date' | 'datetime
   const startHour = to24(h1, ap1)
   const d = new Date(now)
   d.setHours(startHour, 0, 0, 0)
-  return { value: formatDate(d, granularity), score: 0.65 }
+  return { value: formatDate(d, granularity), score: 0.65, start: m.index ?? undefined, end: m.index != null ? (m.index + m[0].length) : undefined }
 }
 
 function extractDateTime(text: string, granularity: 'date' | 'datetime'): Candidate<string> | undefined {
@@ -265,7 +283,9 @@ function extractDateTime(text: string, granularity: 'date' | 'datetime'): Candid
         d.setHours(def, 0, 0, 0)
       }
     }
-    return { value: formatDate(d, granularity), score: 0.9 }
+    const start = (r as any)?.index
+    const textSpan = (r as any)?.text as string | undefined
+    return { value: formatDate(d, granularity), score: 0.9, start, end: start != null && textSpan ? start + textSpan.length : undefined }
   }
   // Relative durations like "in an hour", "in 30 minutes"
   const rel = parseRelativeDuration(text, now, granularity)
@@ -280,7 +300,7 @@ function extractDateTime(text: string, granularity: 'date' | 'datetime'): Candid
     const isPm = (m[2] || '').toLowerCase() === 'pm'
     const d = new Date(now)
     d.setHours((hour % 12) + (isPm ? 12 : 0), 0, 0, 0)
-    return { value: formatDate(d, granularity), score: 0.75 }
+    return { value: formatDate(d, granularity), score: 0.75, start: m.index ?? undefined, end: m.index != null ? (m.index + m[0].length) : undefined }
   }
   // Fallback keywords like "tomorrow", "tonight" handled above by chrono; if missed, provide a coarse guess
   if (/\btomorrow\b/i.test(text)) {
@@ -288,30 +308,39 @@ function extractDateTime(text: string, granularity: 'date' | 'datetime'): Candid
     d.setDate(d.getDate() + 1)
     const def = defaultHourFromText(text)
     if (def !== null) d.setHours(def, 0, 0, 0)
-    return { value: formatDate(d, granularity), score: 0.7 }
+    const idx = text.toLowerCase().indexOf('tomorrow')
+    return { value: formatDate(d, granularity), score: 0.7, start: idx >= 0 ? idx : undefined, end: idx >= 0 ? idx + 'tomorrow'.length : undefined }
   }
   if (/\btonight\b/i.test(text)) {
     const d = new Date(now)
     d.setHours(22, 0, 0, 0)
-    return { value: formatDate(d, granularity), score: 0.7 }
+    const idx = text.toLowerCase().indexOf('tonight')
+    return { value: formatDate(d, granularity), score: 0.7, start: idx >= 0 ? idx : undefined, end: idx >= 0 ? idx + 'tonight'.length : undefined }
   }
   return undefined
 }
 
 export type ExtractionMeta = {
   confidences: { inRoleplayDateTime?: number; place?: number; mood?: number; weather?: number }
+  spans: {
+    inRoleplayDateTime?: { start: number; end: number; text: string }
+    place?: { start: number; end: number; text: string }
+    mood?: { start: number; end: number; text: string }
+    weather?: { start: number; end: number; text: string }
+  }
 }
 
 function coreHeuristicExtract(text: string, prev: RPState, granularity: 'date' | 'datetime' = 'date'): { patch: PartialState; meta: ExtractionMeta } {
   const patch: PartialState = {}
   const confidences: ExtractionMeta['confidences'] = {}
+  const spans: ExtractionMeta['spans'] = {}
 
   const dt = extractDateTime(text, granularity)
-  if (dt) { patch.inRoleplayDateTime = dt.value; confidences.inRoleplayDateTime = dt.score }
+  if (dt) { patch.inRoleplayDateTime = dt.value; confidences.inRoleplayDateTime = dt.score; if (dt.start != null && dt.end != null) spans.inRoleplayDateTime = { start: dt.start, end: dt.end, text: text.slice(dt.start, dt.end) } }
 
   // Place extraction with scoring and negation check
   const placeStr = extractPlace(text)
-  if (placeStr) { patch.place = placeStr.value; confidences.place = placeStr.score }
+  if (placeStr) { patch.place = placeStr.value; confidences.place = placeStr.score; if (placeStr.start != null && placeStr.end != null) spans.place = { start: placeStr.start, end: placeStr.end, text: text.slice(placeStr.start, placeStr.end) } }
 
   // Mood extraction with multi-word support, negation, intensity scoring
   const moodCands: Candidate<string>[] = []
@@ -324,7 +353,7 @@ function coreHeuristicExtract(text: string, prev: RPState, granularity: 'date' |
     if (isBlacklistedMoodContext(lower, spanStart, spanEnd, canonical)) return
     const intensity = (moods as any).moodIntensity?.[normMoodKey(canonical)] ?? 0.5
     const score = Math.max(0, Math.min(1, base + (intensity - 0.5) * 0.3))
-    moodCands.push({ value: canonical, score })
+    moodCands.push({ value: canonical, score, start: spanStart, end: spanEnd })
   }
 
   // Pattern: I am/I'm/feel/feeling <phrase> (up to two words)
@@ -360,8 +389,9 @@ function coreHeuristicExtract(text: string, prev: RPState, granularity: 'date' |
   const mood = chooseBest(moodCands)
   if (mood) {
     patch.mood = mood
-    const bestMood = moodCands.filter(c => c.value === mood).reduce((a, b) => (b.score > a.score ? b : a), { value: mood, score: 0 })
+    const bestMood = moodCands.filter(c => c.value === mood).reduce((a, b) => (b.score > a.score ? b : a), { value: mood, score: 0 }) as Candidate<string>
     if (bestMood) confidences.mood = bestMood.score
+    if (bestMood.start != null && bestMood.end != null) spans.mood = { start: bestMood.start, end: bestMood.end, text: text.slice(bestMood.start, bestMood.end) }
   }
 
   // Weather extraction with patterns, negation, and scoring
@@ -372,7 +402,10 @@ function coreHeuristicExtract(text: string, prev: RPState, granularity: 'date' |
     const w = weatherPhrase[1]
     for (const ww of weatherWords) {
       if (w.includes(ww) && !hasNegation(lower, weatherPhrase.index || 0, (weatherPhrase.index || 0) + w.length)) {
-        weatherCands.push({ value: ww.includes(' ') ? ww : ww, score: 0.8 })
+        const start = weatherPhrase.index || 0
+        const idxWithin = w.indexOf(ww)
+        const st = idxWithin >= 0 ? start + idxWithin : start
+        weatherCands.push({ value: ww.includes(' ') ? ww : ww, score: 0.8, start: st, end: st + ww.length })
         break
       }
     }
@@ -388,17 +421,18 @@ function coreHeuristicExtract(text: string, prev: RPState, granularity: 'date' |
   for (const ww of weatherWords) {
     const idx = lower.indexOf(ww)
     if (idx >= 0 && !hasNegation(lower, idx, idx + ww.length) && hasAnchorAround(idx)) {
-      weatherCands.push({ value: ww, score: 0.6 })
+      weatherCands.push({ value: ww, score: 0.6, start: idx, end: idx + ww.length })
     }
   }
   const weather = chooseBest(weatherCands)
   if (weather) {
     patch.weather = weather
-    const bestW = weatherCands.filter(c => c.value === weather).reduce((a, b) => (b.score > a.score ? b : a), { value: weather, score: 0 })
+    const bestW = weatherCands.filter(c => c.value === weather).reduce((a, b) => (b.score > a.score ? b : a), { value: weather, score: 0 }) as Candidate<string>
     if (bestW) confidences.weather = bestW.score
+    if (bestW.start != null && bestW.end != null) spans.weather = { start: bestW.start, end: bestW.end, text: text.slice(bestW.start, bestW.end) }
   }
 
-  return { patch, meta: { confidences } }
+  return { patch, meta: { confidences, spans } }
 }
 
 export function heuristicExtract(text: string, prev: RPState, granularity: 'date' | 'datetime' = 'date'): PartialState {

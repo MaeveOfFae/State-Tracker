@@ -2,7 +2,8 @@
 // NOTE: This file assumes the stage-template already wires up the StageBase interface.
 // We only implement documented lifecycle functions: constructor, load, beforePrompt, afterResponse, setState, render.
 
-import React from "react";
+import React, { Suspense } from "react";
+const SettingsPanel = React.lazy(() => import('./SettingsPanel'))
 import { StageBase } from "@chub-ai/stages-ts";
 import { heuristicExtract, heuristicExtractWithMeta, llmExtract, diffState, summarizeDiffs } from './extract'
 
@@ -90,7 +91,7 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
   private _env: string | undefined;
   private _lastMeta?: { confidences: { inRoleplayDateTime?: number; place?: number; mood?: number; weather?: number } }
 
-  private config: Config = {
+  private static DEFAULT_CONFIG: Config = {
     include_in_prompt: false,
     include_in_system_message: false,
     prompt_block_label: "RP_STATE",
@@ -103,6 +104,8 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
     time_granularity: 'date',
     diagnostics: false,
   };
+
+  private config: Config = { ...Stage.DEFAULT_CONFIG };
 
   // ---- Initialization ----
   constructor(init: any) {
@@ -161,6 +164,15 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
     this.config = { ...this.config, ...patch }
     this._onChange?.()
     // Fire-and-forget persist to chat-local storage
+    try {
+      this.storage.set('rp_state_config', this.config).forChat()
+    } catch {}
+  }
+
+  private resetToDefaults() {
+    this.config = { ...Stage.DEFAULT_CONFIG }
+    this.chatState.current = { ...DEFAULT_RP_STATE }
+    this._onChange?.()
     try {
       this.storage.set('rp_state_config', this.config).forChat()
     } catch {}
@@ -302,6 +314,18 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
             c.weather != null ? `weather=${c.weather.toFixed(2)}` : null,
           ].filter(Boolean)
           if (parts.length) systemMessage += `\nConfidences: ${parts.join(', ')}`
+          const sp = (this._lastMeta as any).spans || {}
+          const spanParts: string[] = []
+          const addSpan = (label: string, s?: { start: number; end: number; text: string }) => {
+            if (s && typeof s.start === 'number' && typeof s.end === 'number' && typeof s.text === 'string') {
+              spanParts.push(`${label}="${s.text}" @${s.start}-${s.end}`)
+            }
+          }
+          addSpan('dt', sp.inRoleplayDateTime)
+          addSpan('place', sp.place)
+          addSpan('mood', sp.mood)
+          addSpan('weather', sp.weather)
+          if (spanParts.length) systemMessage += `\nSpans: ${spanParts.join(', ')}`
         }
       }
     }
@@ -357,109 +381,12 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
     };
 
     return (
-      <div style={{ padding: 12, fontFamily: "sans-serif" }}>
-        <h3 style={{ margin: "0 0 8px 0" }}>RP State</h3>
-
-        <label>
-          In-RP Date/Time
-          <input
-            style={{ width: "100%", marginTop: 4, marginBottom: 8 }}
-            value={s.inRoleplayDateTime}
-            onChange={(e) => set({ inRoleplayDateTime: (e.target as HTMLInputElement).value })}
-          />
-        </label>
-
-        <label>
-          Place
-          <input
-            style={{ width: "100%", marginTop: 4, marginBottom: 8 }}
-            value={s.place}
-            onChange={(e) => set({ place: (e.target as HTMLInputElement).value })}
-          />
-        </label>
-
-        <label>
-          Mood
-          <input
-            style={{ width: "100%", marginTop: 4, marginBottom: 8 }}
-            value={s.mood}
-            onChange={(e) => set({ mood: (e.target as HTMLInputElement).value })}
-          />
-        </label>
-
-        <label>
-          Weather
-          <input
-            style={{ width: "100%", marginTop: 4, marginBottom: 8 }}
-            value={s.weather}
-            onChange={(e) => set({ weather: (e.target as HTMLInputElement).value })}
-          />
-        </label>
-
-        <label>
-          Scene Notes (clamped)
-          <textarea
-            style={{ width: "100%", marginTop: 4, minHeight: 80 }}
-            value={s.sceneNotes}
-            onChange={(e) => set({ sceneNotes: (e.target as HTMLTextAreaElement).value })}
-          />
-        </label>
-
-        <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-          These fields are tracked and may be used to guide the model if enabled.
-        </div>
-
         <details style={{ marginTop: 12 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Settings</summary>
-          <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={!!cfg.include_in_prompt}
-                onChange={(e) => this.updateConfig({ include_in_prompt: (e.target as HTMLInputElement).checked })}
-              /> include_in_prompt
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={!!cfg.include_in_system_message}
-                onChange={(e) => this.updateConfig({ include_in_system_message: (e.target as HTMLInputElement).checked })}
-              /> include_in_system_message
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={!!cfg.auto_extract_before_prompt}
-                onChange={(e) => this.updateConfig({ auto_extract_before_prompt: (e.target as HTMLInputElement).checked })}
-              /> auto_extract_before_prompt
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={!!cfg.auto_extract_after_response}
-                onChange={(e) => this.updateConfig({ auto_extract_after_response: (e.target as HTMLInputElement).checked })}
-              /> auto_extract_after_response
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={cfg.only_show_on_change ?? true}
-                onChange={(e) => this.updateConfig({ only_show_on_change: (e.target as HTMLInputElement).checked })}
-              /> only_show_on_change
-            </label>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={!!cfg.diagnostics}
-                onChange={(e) => this.updateConfig({ diagnostics: (e.target as HTMLInputElement).checked })}
-              /> diagnostics
-            </label>
-
-            <label style={{ display: 'block' }}>
-              extraction_strategy
-              <select
-                value={cfg.extraction_strategy}
+          <Suspense fallback={<div style={{ marginTop: 8 }}>Loading…</div>}> 
+            <SettingsPanel cfg={cfg} onUpdate={(p:any) => this.updateConfig(p)} onReset={() => this.resetToDefaults()} />
+          </Suspense>
+        </details>
                 onChange={(e) => this.updateConfig({ extraction_strategy: (e.target as HTMLSelectElement).value as any })}
                 style={{ width: '100%', marginTop: 4 }}
               >
@@ -512,6 +439,12 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
 
           <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
             Settings here affect only this session. Use Chat Settings to persist defaults.
+          </div>
+
+          <div style={{ marginTop: 8 }}>
+            <button type="button" onClick={() => this.resetToDefaults()} style={{ padding: '6px 10px' }}>
+              Reset to defaults
+            </button>
           </div>
         </details>
       </div>

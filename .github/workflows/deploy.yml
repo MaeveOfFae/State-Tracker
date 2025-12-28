@@ -20,7 +20,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '21.7.1'
+          node-version: '22.x'
           cache: 'yarn'
 
       - name: Enable Corepack and Yarn 1
@@ -58,7 +58,7 @@ jobs:
               git config --local user.email "action@github.com"
               git config --local user.name "GitHub Action"
               git add public/chub_meta.yaml
-              git commit -m "Add github_path to chub_meta.yaml" || true
+              git commit -m "[skip ci] Add github_path to chub_meta.yaml" || true
               git push
             fi
           fi
@@ -83,7 +83,7 @@ jobs:
                   git config --local user.email "action@github.com"
                   git config --local user.name "GitHub Action"
                   git add public/chub_meta.yaml
-                  git commit -m "Add new Extension ID to chub_meta.yaml" || true
+                  git commit -m "[skip ci] Add new Extension ID to chub_meta.yaml" || true
                   git push
                 fi
              else
@@ -112,13 +112,13 @@ jobs:
                 git config --local user.email "action@github.com"
                 git config --local user.name "GitHub Action"
                 git add "$file"
-                git commit -m "Add project_uuid to YAML file" || true
+                git commit -m "[skip ci] Add project_uuid to YAML file" || true
                 git push
               fi
             done
           fi
       - name: Install dependencies
-        run: YARN_IGNORE_ENGINES=1 yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile
 
       - name: Build
         run: yarn build
@@ -130,8 +130,9 @@ jobs:
         if: ${{ !contains(github.repository, 'template') }}
         env:
           CHUB_AUTH_TOKEN: ${{ secrets.CHUB_AUTH_TOKEN }}
+          STAGE_ID: ${{ env.STAGE_ID }}
         run: |    
-          curl -sS -H "CH-API-KEY: ${{ secrets.CHUB_AUTH_TOKEN }}" -F "file=@build.zip" https://api.chub.ai/extension/${{ env.STAGE_ID }}/upload
+          curl -sS -H "CH-API-KEY: $CHUB_AUTH_TOKEN" -F "file=@build.zip" "https://api.chub.ai/extension/$STAGE_ID/upload"
 
       - name: Setup .npmrc
         env:

@@ -24,13 +24,16 @@ config_schema:
       default: 280
     auto_extract_before_prompt:
       type: boolean
-      default: true
+      default: false
     only_show_on_change:
       type: boolean
       default: true
     auto_extract_after_response:
       type: boolean
       default: true
+    diagnostics:
+      type: boolean
+      default: false
     extraction_strategy:
       type: string
       enum:
@@ -49,6 +52,44 @@ config_schema:
         - date
         - datetime
       default: date
+
+    # Optional JSON Schemas for stage state shapes (best-effort; refs minimized for compatibility)
+    init_state_schema:
+      title: InitState
+      description: Initialization state (unused)
+      type: 'null'
+
+    message_state_schema:
+      title: MessageState
+      type: object
+      properties:
+        snapshot:
+          title: RPState
+          type: object
+          properties:
+            inRoleplayDateTime: { type: string }
+            place: { type: string }
+            mood: { type: string }
+            weather: { type: string }
+            sceneNotes: { type: string }
+          required: [inRoleplayDateTime, place, mood, weather, sceneNotes]
+      required: [snapshot]
+
+    chat_state_schema:
+      title: ChatState
+      type: object
+      properties:
+        current:
+          title: RPState
+          type: object
+          properties:
+            inRoleplayDateTime: { type: string }
+            place: { type: string }
+            mood: { type: string }
+            weather: { type: string }
+            sceneNotes: { type: string }
+          required: [inRoleplayDateTime, place, mood, weather, sceneNotes]
+      required: [current]
 
 github_path: 'https://github.com/MaeveOfFae/State-Tracker'
 

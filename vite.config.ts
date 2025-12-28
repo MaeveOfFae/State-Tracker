@@ -24,6 +24,12 @@ export default defineConfig({
         tests: resolve(__dirname, 'test-harness.html'),
         batch: resolve(__dirname, 'batch-tests.html'),
       },
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          chrono: ['chrono-node'],
+        },
+      },
     },
   },
 })
