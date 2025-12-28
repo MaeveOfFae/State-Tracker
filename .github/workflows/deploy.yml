@@ -118,7 +118,7 @@ jobs:
             done
           fi
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: YARN_IGNORE_ENGINES=1 yarn install --frozen-lockfile
 
       - name: Build
         run: yarn build
