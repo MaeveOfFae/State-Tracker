@@ -1,21 +1,29 @@
-- In-chat live coding
-	- yarn dev:chat:host
-	- In Chub Chat Settings → Staging URL, paste http://localhost:5173 and refresh.
 # RP State Tracker (Chub AI Stage)
 
 A Chub AI Stage that maintains a structured RP state (date/time, place, mood, weather, notes), lets the user edit it in a small UI, and can optionally inject a compact state block into the prompt.
 
 ## Files
 
-- public/chub_meta.yaml — Stage metadata and config schema
+- public/chub_meta.yaml — Stage metadata, config schema, and state schemas
 - src/Stage.tsx — Stage implementation (constructor, load, beforePrompt, afterResponse, setState, render)
-- src/main.tsx — Local dev shell (not used by Chub AI runtime)
+- src/SettingsPanel.tsx — Lazy-loaded settings UI
+- src/entry-stages.tsx — Entry for stages runner (mounts App)
+- src/App.tsx — Chooses ReactRunner (staging) vs TestStageRunner (dev)
+- src/main.tsx — Local harness UI (manual testing)
+- src/test-harness.tsx — Multi-line extraction test UI
+- src/extract.test.ts — Console batch tests for extraction heuristics
 
 ## Scripts
 
-- npm run dev — Start Vite dev server for local UI preview
-- npm run build — Type-check and build the site
-- npm run preview — Preview the production build
+- yarn dev — Start Vite dev server (stages runner entry)
+- yarn dev:host — Dev server bound to 0.0.0.0 for LAN
+- yarn dev:stages — Open index-harness.html (local harness UI)
+- yarn dev:stages:host — Harness UI bound to 0.0.0.0
+- yarn dev:tests — Open test-harness.html (multi-line extraction UI)
+- yarn dev:batch — Open batch-tests.html (console PASS/FAIL)
+- yarn build — Type-check and build the site
+- yarn preview — Preview the production build
+- yarn preview:host — Preview bound to 0.0.0.0 (recommended for staging)
 
 ## Integration Notes
 
@@ -34,7 +42,7 @@ See public/chub_meta.yaml. Key options:
 ## Development
 
 Node & package manager
-- Requires Node 21.7.1 (see .nvmrc). Use nvm:
+- Requires Node 22 (see .nvmrc). Use nvm:
 	- nvm use
 	- nvm install if not present
 - Uses Yarn classic. If needed, enable via Corepack: corepack enable
@@ -42,16 +50,24 @@ Node & package manager
 Local dev options
 - Stages runner page (default, uses @chub-ai/stages-ts):
 	- yarn dev
-	- Opens root (/) which renders src/App.tsx (TestRunner in dev)
+	- Opens root (/) which renders src/App.tsx
 - Harness page:
 	- yarn dev:stages
 	- Opens /index-harness.html which mounts src/main.tsx
+- Test pages:
+	- yarn dev:tests → /test-harness.html
+	- yarn dev:batch → /batch-tests.html (console output)
+
 In-chat staging (recommended)
- - Build then serve preview (avoids HMR-in-iframe quirks):
-	 - yarn build
-	 - yarn preview:host
-	 - Set Chat Settings → Staging URL to http://localhost:4173
-	 - Hard-reload the chat page
+- Build then serve preview (prevents HMR/iframe handshake issues):
+	- yarn build
+	- yarn preview:host
+	- Set Chat Settings → Staging URL to http://YOUR_LAN_IP:4173/index.html
+	- Hard-reload the chat page (Shift+Reload)
+
+Dev server inside iframe
+- We set CORS and disabled HMR overlay in vite config to reduce iframe handshake stalls.
+- If issues persist, use the preview server flow above.
 
 Typical workflow
 1. nvm use
@@ -63,8 +79,10 @@ Typical workflow
 
 - yarn build outputs the production site to dist/
 - Multi-page build outputs:
-	- dist/index.html (Harness)
-	- dist/index-stages.html (Stages runner)
+	- dist/index.html (Stages runner)
+	- dist/index-harness.html (Harness)
+	- dist/test-harness.html (Extraction test UI)
+	- dist/batch-tests.html (Batch tests page)
 
 ## CI deployment to Chub
 
