@@ -4,7 +4,7 @@
 
 import React from "react";
 import { StageBase } from "@chub-ai/stages-ts";
-import { heuristicExtract, llmExtract, diffState, summarizeDiffs } from './extract'
+import { heuristicExtract, heuristicExtractWithMeta, llmExtract, diffState, summarizeDiffs } from './extract'
 
 type RPState = {
   inRoleplayDateTime: string; // free-form
@@ -81,12 +81,14 @@ type Config = {
   extraction_max_runtime_ms: number;
   time_granularity: 'date' | 'datetime';
   only_show_on_change?: boolean;
+  diagnostics?: boolean;
 }
 
 export class Stage extends StageBase<any, ChatState, MessageState, Config> {
   private chatState: ChatState = { current: { ...DEFAULT_RP_STATE } };
   private _onChange?: () => void;
   private _env: string | undefined;
+  private _lastMeta?: { confidences: { inRoleplayDateTime?: number; place?: number; mood?: number; weather?: number } }
 
   private config: Config = {
     include_in_prompt: false,
@@ -99,6 +101,7 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
     extraction_llm_endpoint: '',
     extraction_max_runtime_ms: 1500,
     time_granularity: 'date',
+    diagnostics: false,
   };
 
   // ---- Initialization ----
@@ -121,6 +124,7 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
         extraction_max_runtime_ms: cfg.extraction_max_runtime_ms ?? this.config.extraction_max_runtime_ms,
         time_granularity: cfg.time_granularity ?? this.config.time_granularity,
         only_show_on_change: cfg.only_show_on_change ?? this.config.only_show_on_change ?? true,
+        diagnostics: cfg.diagnostics ?? this.config.diagnostics ?? false,
       };
     }
   }
@@ -289,6 +293,16 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
       if (!onlyOnChange || extractionSummary) {
         const diffs = diffState(this.chatState.current, current)
         systemMessage = buildSystemBox(this.config.prompt_block_label, current, diffs)
+        if (this.config.diagnostics && this._lastMeta) {
+          const c = this._lastMeta.confidences
+          const parts = [
+            c.inRoleplayDateTime != null ? `dt=${c.inRoleplayDateTime.toFixed(2)}` : null,
+            c.place != null ? `place=${c.place.toFixed(2)}` : null,
+            c.mood != null ? `mood=${c.mood.toFixed(2)}` : null,
+            c.weather != null ? `weather=${c.weather.toFixed(2)}` : null,
+          ].filter(Boolean)
+          if (parts.length) systemMessage += `\nConfidences: ${parts.join(', ')}`
+        }
       }
     }
 
@@ -314,7 +328,9 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
       const llm = await llmExtract(this.config.extraction_llm_endpoint, text, prev, this.config.extraction_max_runtime_ms)
       if (llm) return llm
     }
-    return heuristicExtract(text, prev, this.config.time_granularity)
+    const { patch, meta } = heuristicExtractWithMeta(text, prev, this.config.time_granularity)
+    this._lastMeta = meta
+    return patch
   }
 
   // ---- On swipe/jump ----
@@ -430,6 +446,14 @@ export class Stage extends StageBase<any, ChatState, MessageState, Config> {
                 checked={cfg.only_show_on_change ?? true}
                 onChange={(e) => this.updateConfig({ only_show_on_change: (e.target as HTMLInputElement).checked })}
               /> only_show_on_change
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={!!cfg.diagnostics}
+                onChange={(e) => this.updateConfig({ diagnostics: (e.target as HTMLInputElement).checked })}
+              /> diagnostics
             </label>
 
             <label style={{ display: 'block' }}>

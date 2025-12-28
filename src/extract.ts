@@ -49,6 +49,12 @@ function chooseBest<T>(cands: Candidate<T>[], minScore = 0.6): T | undefined {
   return best.score >= minScore ? best.value : undefined
 }
 
+function chooseBestCand<T>(cands: Candidate<T>[], minScore = 0.6): Candidate<T> | undefined {
+  if (!cands.length) return undefined
+  const best = cands.reduce((a, b) => (b.score > a.score ? b : a))
+  return best.score >= minScore ? best : undefined
+}
+
 function normMoodKey(s: string): string {
   return s.toLowerCase().replace(/[^a-z]+/g, '')
 }
@@ -99,7 +105,7 @@ function extractAmbiguousPlace(text: string): Candidate<string> | undefined {
   return undefined
 }
 
-function extractPlace(text: string): string | undefined {
+function extractPlace(text: string): Candidate<string> | undefined {
   const lower = text.toLowerCase()
   const original = text
   const cands: Candidate<string>[] = []
@@ -166,9 +172,9 @@ function extractPlace(text: string): string | undefined {
   const ambig = extractAmbiguousPlace(text)
   if (ambig) cands.push(ambig)
 
-  const best = chooseBest(cands)
+  const best = chooseBestCand(cands)
   // Reject too generic best results
-  if (best && isTooGeneric(best)) return undefined
+  if (best && isTooGeneric(best.value)) return undefined
   return best
 }
 
@@ -198,6 +204,53 @@ function formatDate(d: Date, granularity: 'date' | 'datetime'): string {
   })
 }
 
+function parseRelativeDuration(text: string, now: Date, granularity: 'date' | 'datetime'): Candidate<string> | undefined {
+  const m = text.match(/\bin\s+(an?|one|a few|few|a couple|couple|\d+)\s+(minute|minutes|min|hour|hours|hr|hrs|day|days|week|weeks)\b/i)
+  if (!m) return undefined
+  const qtyRaw = m[1].toLowerCase()
+  const unit = m[2].toLowerCase()
+  let qty: number
+  if (/^an?$/.test(qtyRaw) || qtyRaw === 'one') qty = 1
+  else if (qtyRaw === 'a few' || qtyRaw === 'few') qty = 3
+  else if (qtyRaw === 'a couple' || qtyRaw === 'couple') qty = 2
+  else qty = parseInt(qtyRaw, 10)
+  if (!Number.isFinite(qty)) return undefined
+
+  const d = new Date(now)
+  if (unit.startsWith('min')) d.setMinutes(d.getMinutes() + qty)
+  else if (unit.startsWith('hr') || unit.startsWith('hour')) d.setHours(d.getHours() + qty)
+  else if (unit.startsWith('day')) d.setDate(d.getDate() + qty)
+  else if (unit.startsWith('week')) d.setDate(d.getDate() + qty * 7)
+  else return undefined
+  return { value: formatDate(d, granularity), score: 0.8 }
+}
+
+function parseTimeRange(text: string, now: Date, granularity: 'date' | 'datetime'): Candidate<string> | undefined {
+  const m = text.match(/\b(?:from\s+)?(\d{1,2})(?:\s*(am|pm))?\s*(?:-|to|–|—)\s*(\d{1,2})(?:\s*(am|pm))?\b/i)
+  if (!m) return undefined
+  let h1 = parseInt(m[1], 10)
+  let ap1 = (m[2] || '').toLowerCase()
+  let h2 = parseInt(m[3], 10)
+  let ap2 = (m[4] || '').toLowerCase()
+  if (h1 > 24 || h2 > 24) return undefined
+  // Infer am/pm
+  if (!ap1 && ap2) ap1 = ap2
+  if (!ap2 && ap1) ap2 = ap1
+  // Default to evening if hinted
+  const lower = text.toLowerCase()
+  const eveningHint = /(evening|night|tonight)\b/.test(lower)
+  const to24 = (h: number, ap: string) => {
+    if (ap === 'pm' && h < 12) return h + 12
+    if (ap === 'am' && h === 12) return 0
+    if (!ap && eveningHint) return h === 12 ? 12 : (h % 12) + 12
+    return h % 24
+  }
+  const startHour = to24(h1, ap1)
+  const d = new Date(now)
+  d.setHours(startHour, 0, 0, 0)
+  return { value: formatDate(d, granularity), score: 0.65 }
+}
+
 function extractDateTime(text: string, granularity: 'date' | 'datetime'): Candidate<string> | undefined {
   const now = new Date()
   const results = chrono.parse(text, now, { forwardDate: true })
@@ -214,6 +267,12 @@ function extractDateTime(text: string, granularity: 'date' | 'datetime'): Candid
     }
     return { value: formatDate(d, granularity), score: 0.9 }
   }
+  // Relative durations like "in an hour", "in 30 minutes"
+  const rel = parseRelativeDuration(text, now, granularity)
+  if (rel) return rel
+  // Simple time ranges like "7-9pm", "from 6 to 8"
+  const range = parseTimeRange(text, now, granularity)
+  if (range) return range
   // Fallback: time-only like "7ish" or "around 8"
   const m = text.match(/\b(?:around\s+|about\s+)?(\d{1,2})(?:\s*(?:am|pm))?\s*ish\b/i) || text.match(/\b(?:around\s+|about\s+)?(\d{1,2})\s*(am|pm)\b/i)
   if (m) {
@@ -239,15 +298,20 @@ function extractDateTime(text: string, granularity: 'date' | 'datetime'): Candid
   return undefined
 }
 
-export function heuristicExtract(text: string, prev: RPState, granularity: 'date' | 'datetime' = 'date'): PartialState {
+export type ExtractionMeta = {
+  confidences: { inRoleplayDateTime?: number; place?: number; mood?: number; weather?: number }
+}
+
+function coreHeuristicExtract(text: string, prev: RPState, granularity: 'date' | 'datetime' = 'date'): { patch: PartialState; meta: ExtractionMeta } {
   const patch: PartialState = {}
+  const confidences: ExtractionMeta['confidences'] = {}
 
   const dt = extractDateTime(text, granularity)
-  if (dt) patch.inRoleplayDateTime = dt.value
+  if (dt) { patch.inRoleplayDateTime = dt.value; confidences.inRoleplayDateTime = dt.score }
 
   // Place extraction with scoring and negation check
   const placeStr = extractPlace(text)
-  if (placeStr) patch.place = placeStr
+  if (placeStr) { patch.place = placeStr.value; confidences.place = placeStr.score }
 
   // Mood extraction with multi-word support, negation, intensity scoring
   const moodCands: Candidate<string>[] = []
@@ -294,7 +358,11 @@ export function heuristicExtract(text: string, prev: RPState, granularity: 'date
   }
 
   const mood = chooseBest(moodCands)
-  if (mood) patch.mood = mood
+  if (mood) {
+    patch.mood = mood
+    const bestMood = moodCands.filter(c => c.value === mood).reduce((a, b) => (b.score > a.score ? b : a), { value: mood, score: 0 })
+    if (bestMood) confidences.mood = bestMood.score
+  }
 
   // Weather extraction with patterns, negation, and scoring
   const weatherCands: Candidate<string>[] = []
@@ -324,9 +392,21 @@ export function heuristicExtract(text: string, prev: RPState, granularity: 'date
     }
   }
   const weather = chooseBest(weatherCands)
-  if (weather) patch.weather = weather
+  if (weather) {
+    patch.weather = weather
+    const bestW = weatherCands.filter(c => c.value === weather).reduce((a, b) => (b.score > a.score ? b : a), { value: weather, score: 0 })
+    if (bestW) confidences.weather = bestW.score
+  }
 
-  return patch
+  return { patch, meta: { confidences } }
+}
+
+export function heuristicExtract(text: string, prev: RPState, granularity: 'date' | 'datetime' = 'date'): PartialState {
+  return coreHeuristicExtract(text, prev, granularity).patch
+}
+
+export function heuristicExtractWithMeta(text: string, prev: RPState, granularity: 'date' | 'datetime' = 'date'): { patch: PartialState; meta: ExtractionMeta } {
+  return coreHeuristicExtract(text, prev, granularity)
 }
 
 export async function llmExtract(endpoint: string, text: string, prev: RPState, timeoutMs = 1500): Promise<PartialState | null> {
